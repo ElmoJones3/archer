@@ -1,5 +1,7 @@
 packages:
-  - "packages/*"
+  - 'packages/*'
+  - '!packages/cell-runtime'
+  - '!packages/sandbox-runtime'
 
 # Package versions must spend 14 days in the registry before they are eligible
 # for resolution. This applies to direct and transitive dependencies.

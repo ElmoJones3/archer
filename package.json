@@ -2,13 +2,25 @@
   "name": "archer",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "pnpm --recursive build",
-    "test": "pnpm --recursive test"
+    "build": "turbo run build",
+    "format": "prettier --write . --ignore-unknown",
+    "format:check": "prettier --check . --ignore-unknown",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
   },
   "engines": {
     "node": ">=26.7.0 <27",
     "pnpm": ">=11.22.0 <12"
   },
-  "packageManager": "pnpm@11.22.0"
+  "packageManager": "pnpm@11.22.0",
+  "devDependencies": {
+    "@archer/eslint": "workspace:*",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.8",
+    "typescript": "^5.9.3"
+  }
 }

@@ -1,0 +1,10 @@
+.private/
+.turbo/
+.codex
+coverage/
+dist/
+mise.toml
+node_modules/
+packages/cell-runtime/
+packages/sandbox-runtime/
+pnpm-lock.yaml

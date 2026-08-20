@@ -15,6 +15,9 @@ npm-debug.log*
 coverage/
 *.lcov
 
+# Turbo
+.turbo/
+
 # Local env. Keep .env.example if you add one.
 .env
 .env.*
@@ -33,6 +36,10 @@ coverage/
 .spikes/
 .cache/
 .codex
+
+# Pre-009 spike implementations retained as local construction references
+packages/cell-runtime/
+packages/sandbox-runtime/
 
 # Local mise pin. Node and pnpm versions for the repo live in package.json.
 mise.toml
