@@ -1,0 +1,6 @@
+packages:
+  - "packages/*"
+
+# Package versions must spend 14 days in the registry before they are eligible
+# for resolution. This applies to direct and transitive dependencies.
+minimumReleaseAge: 20160

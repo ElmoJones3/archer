@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# TypeScript emit from packages/ and spikes/
+dist/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+.pnpm-debug.log*
+
+# Coverage
+coverage/
+*.lcov
+
+# Local env. Keep .env.example if you add one.
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Cell runtime SQLite plus WAL sidecars
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Local-only notes, dumps, and agent state
+.private/
+.spikes/
+.cache/
+.codex
+
+# Local mise pin. Node and pnpm versions for the repo live in package.json.
+mise.toml
