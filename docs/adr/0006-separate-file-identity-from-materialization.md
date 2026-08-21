@@ -18,3 +18,14 @@ durability that adapters may not provide.
 Programs inside a sandbox still receive ordinary operating-system paths.
 Archer's file contracts define logical identity and lineage, while each
 Materializer chooses the physical mechanism and verifies ingestion.
+
+Workspace and Scratchpad handles expose hot acknowledged summary state, not raw
+filesystem watcher events. Materialization and ingestion are finite
+`LiveOperation`s because their progress, abort, cleanup, and terminal evidence
+matter. A `MaterializedView` exposes a fixed generation but is not `LiveState`:
+unquiesced physical bytes are not acknowledged logical facts.
+
+An immutable `WorkspaceSnapshot` is a transferable lineage product. A
+`WorkspaceHandleSnapshot` is the hot current projection of a retained
+attachment. The separate names prevent process lifecycle such as `ingesting`
+or `closing` from being mistaken for durable Workspace evidence.

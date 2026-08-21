@@ -7,3 +7,8 @@ the action. Owning a retained handle never supplies authority by itself.
 
 This prevents forged TypeScript-shaped records, stale grants, and cross-target
 replay from turning structural compatibility into permission.
+
+An authority audit stream may expose replayable ledger facts, but a
+subscription, cached snapshot, or prior receipt cannot implement the current
+check. The protected service calls an `AuthorityBroker` with its trusted clock
+at the action boundary.

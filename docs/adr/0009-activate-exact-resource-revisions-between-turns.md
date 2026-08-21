@@ -8,3 +8,8 @@ call it caused remain pinned to the `ResourceSet` that produced them.
 
 This permits spontaneous resource production without making replay depend on
 mutable names or mid-step catalogue changes.
+
+Resource control exposes replayable admission, profile, activation, and
+revocation facts. The active `ResourceSet` remains an immutable value compiled
+for an exact frontier. A subscriber cannot replace the current admission and
+revocation checks performed when a Turn or invocation begins.

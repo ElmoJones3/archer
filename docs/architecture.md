@@ -37,8 +37,9 @@ work have different owners:
    fencing, wakes, and recovery before an effect begins.
 3. Internal RxJS graphs perform acknowledged live work and manage cancellation,
    concurrency, timers, and fan-out.
-4. Public contracts expose the resulting values, commands, bounded event
-   delivery, and lifecycle without exposing RxJS or a product SDK.
+4. Public contracts expose immutable current state, subscriptions, commands,
+   bounded event delivery, outcomes, and lifecycle without exposing RxJS or a
+   product SDK.
 
 The coding harness is one Program. A Thread contains Turns and ordered Items.
 It performs one model step, records the terminal response, binds raw tool
@@ -56,37 +57,132 @@ category has a small public protocol, public construction and validation paths,
 and a conformance suite another implementation can run. Products compete at
 the adapters instead of expanding one privileged harness package.
 
+## Philosophy
+
+Archer is a reactive agent framework, not a function that eventually returns an
+answer. A task, Thread, Cell attachment, Workspace, Scratchpad, or sandbox can
+change while its caller does nothing. Its public handle therefore exposes one
+immutable current snapshot and subsequent updates from the moment the owner is
+retained. Ordered durable facts and transient presentation updates remain
+separate streams. One finite attempt exposes progress, active abort, and one
+terminal result. A Promise is useful for construction, commands, and waiting.
+It is not a living owner.
+
+There are no reactivity cliffs. The one-call path, retained composition, direct
+handles, framework bindings, SSE, WebSocket, and stdio all project the same
+running graph. Dropping to a lower layer does not force an application to poll,
+fold an endless event log, build another reducer, or accept a callback-only
+version of a managed object. Moving across a process boundary does not create a
+second agent loop.
+
+RxJS is the internal temporal engine. Archer uses it because cancellation,
+concurrency, fan-out, superseding work, time, and failure are the problem, not
+incidental plumbing. Consumers should get those benefits without learning
+RxJS. Public contracts expose a small standard-JavaScript bridge that works in
+a script, a server, or a browser framework and does not leak an RxJS type.
+
+Reactive does not mean turning every value into a stream. Immutable evidence,
+pure decisions, point-in-time authority checks, and one-shot commands stay
+values or Promises. Archer classifies time by ownership. Retained owners expose
+current state, ordered histories declare whether they replay or gap, and
+bounded attempts use one finite operation contract. That classification is
+part of the API, not an implementation convention.
+
+Composability is law. Every managed default is built from the same public
+contracts available to an application or a competing implementation. There is
+no privileged agent loop behind `runTask`, no private adapter protocol, and no
+required all-in-one runtime. A developer may replace one model, store,
+sandbox, prompt compiler, logger, transport, or policy. They may also take the
+Program, Cell, stream, and diagnostic core and build a different agent product.
+
+Convenience should remove assembly, not truth. The shortest path supplies
+opinionated prompts, skills, tools, lifecycle, diagnostics, and local storage.
+It still names the model and exact sandbox guarantee, exposes the running work,
+and returns the same evidence as direct composition.
+
+Optimization should be cheap. A consumer starts with working defaults and
+replaces only the part that matters. First-party capabilities ship in a small
+set of packages with explicit subpath exports. Root modules have no import-time
+effects, unused adapters do not initialize, and provider-specific dependencies
+do not enter contract declarations. Internal module boundaries remain strict
+without turning every interface into another package to install, version, and
+discover.
+
+Logging is part of the runtime. Logs begin as a bounded diagnostic stream, not
+as ambient calls scattered through domain code. Every effect attempt,
+lifecycle phase, recovery decision, and adapter boundary emits structured
+diagnostics. Managed Node presets attach a redacted Pino projection by default.
+Applications can subscribe directly, change filters, add sinks, or replace the
+logger without changing durable behavior. An observable core with invisible
+operation would be unfinished.
+
+Archer is for the people who run it and the people who want to change it. The
+public protocols, codecs, source modules, defaults, and conformance suites are
+the implementation seam. Fork it, compose it, publish another adapter, or use
+the core to build your own Codex. No Archer package gets special authority by
+being first-party.
+
 ## Design rules
 
 The following rules apply at every entry point:
 
-1. **Acknowledge before acting.** External work begins only after the causing
+1. **Return living owners.** A retained owner whose state can change without a
+   caller method exposes hot current state. One finite admitted attempt returns
+   a `LiveOperation`. No managed task API reduces a run to a final Promise, and
+   no direct handle makes a caller reconstruct current state from events.
+2. **Use one graph.** First-party temporal behavior uses one shared RxJS graph
+   per live source. Managed objects, direct handles, log projections, framework
+   bindings, and transports derive from it. Subscriber count never starts,
+   repeats, pauses, or cancels the work.
+3. **Keep RxJS internal, not optional.** Public declarations expose Archer's
+   snapshot, atomic attachment, replayable stream, transient stream,
+   finite-operation, and owned lifecycle contracts. They never expose an RxJS
+   type or maintain a second callback implementation of the same lifecycle.
+4. **Name the delivery guarantee.** Durable streams use branded cursors and
+   resume. Transient streams use exact gaps or detachment. A merged convenience
+   view cannot erase those different guarantees.
+5. **Make transport faithful.** A remote attachment starts from one atomic
+   snapshot, version, and cursor seed obtained through the handle's public
+   bridge. SSE, WebSocket, and stdio preserve the same state, stream, command,
+   settlement, and close semantics without polling or privileged internals.
+6. **Make operation visible.** Diagnostics and logs are bounded streams.
+   Managed Node construction includes structured Pino output, while logging,
+   metrics, traces, and subscribers remain non-authoritative, redacted, and
+   replaceable.
+7. **Make composition exact.** Every default, preset, adapter, and extension
+   uses public contracts. Direct composition may replace any component without
+   entering an internal API or weakening another component's guarantees.
+8. **Keep opt-in costs local.** Capability families use side-effect-free roots
+   and explicit adapter subpaths. Heavy provider dependencies load only when
+   their adapter is selected. Source modules preserve dependency direction
+   without forcing one npm package per contract.
+9. **Acknowledge before acting.** External work begins only after the causing
    event, state, and effect intent satisfy the selected Cell durability
    contract.
-2. **Keep durable meaning pure.** Reducers perform no I/O, read no clock, emit
-   no diagnostic, and obtain no permission. Relevant external facts return as
-   events.
-3. **Preserve exact guarantees.** Broad labels such as `model`, `sandbox`, or
-   `vm` enable shared behavior but never erase provider controls or backend
-   facts.
-4. **Verify authority at the action.** A Principal is attribution and a
-   `GrantRef` is a lookup reference. The service about to act verifies current
-   subject, action, scope, target, expiry, and revocation.
-5. **Pin causality.** A model request and every tool call it causes retain the
-   exact ResourceSet, resource revisions, request digest, effect, and attempt.
-6. **Keep work private.** Tasks produce private Workspace snapshots and may
-   produce ChangeSets. Promotion is a separate authorized compare-and-swap.
-7. **Separate logical files from physical views.** Immutable trees own content
-   identity, Workspaces and Scratchpads own mutable use, and Materializers own
-   hydration and ingestion.
-8. **Make live delivery bounded.** Every live queue has an item or byte bound.
-   Loss, resume, detachment, abort, and terminal settlement are explicit.
-9. **Observe without controlling.** Logs, metrics, traces, presentation deltas,
-   and diagnostic subscribers cannot change durable outcomes.
-10. **Make convenience honest.** Managed calls compile defaults into the same
+10. **Keep durable meaning pure.** Reducers perform no I/O, read no clock, emit
+    no diagnostic, and obtain no permission. Relevant external facts return as
+    events.
+11. **Preserve exact guarantees.** Broad labels such as `model`, `sandbox`, or
+    `vm` enable shared behavior but never erase provider controls or backend
+    facts.
+12. **Verify authority at the action.** A Principal is attribution and a
+    `GrantRef` is a lookup reference. The service about to act verifies current
+    subject, action, scope, target, expiry, and revocation.
+13. **Pin causality.** A model request and every tool call it causes retain the
+    exact ResourceSet, resource revisions, request digest, effect, and attempt.
+14. **Keep work private.** Tasks produce private Workspace snapshots and may
+    produce ChangeSets. Promotion is a separate authorized compare-and-swap.
+15. **Separate logical files from physical views.** Immutable trees own content
+    identity, Workspaces and Scratchpads own mutable use, and Materializers own
+    hydration and ingestion.
+16. **Make live delivery bounded.** Every live queue has an item or byte bound.
+    Loss, resume, detachment, abort, and terminal settlement are explicit.
+17. **Observe without controlling.** Logs, metrics, traces, presentation deltas,
+    and diagnostic subscribers cannot change durable outcomes.
+18. **Make convenience honest.** Managed calls compile defaults into the same
     profiles, resources, grants, handles, and evidence used by direct
     composition.
-11. **Ship proof with the port.** A replaceable contract is incomplete without
+19. **Ship proof with the port.** A replaceable contract is incomplete without
     codecs, required failure cases, and a versioned conformance suite.
 
 ## Public values, interfaces, and classes
@@ -106,6 +202,12 @@ process, queue, transport, physical view, or close sequence. Those classes are
 implementation details. V1 does not require consumers to construct an
 implementation class or extend a base class.
 
+`TaskRun` is the central behavioral object. A first-party class owns its hot
+state projection, subscriptions, attachments, commands, and close sequence,
+while applications program against the `TaskRun` interface returned by a
+factory. `TaskRunSnapshot` and `TaskOutcome` are readonly discriminated values.
+The run is not a result object with optional callback fields.
+
 Expected operational outcomes are tagged values. Invalid restored input,
 construction failure, or a broken adapter protocol may throw before a managed
 operation exists. There is no public exception hierarchy for ordinary task,
@@ -119,95 +221,80 @@ Arrows in this diagram mean "depends on." Dashed arrows mean "implements" or
 ```mermaid
 flowchart TB
   subgraph Entry[Progressive entry points]
-    One["runTask plus an explicit preset"]
-    Managed["createArcher plus TaskRun"]
+    One["runTask returns a hot TaskRun"]
+    Managed["createArcher retains shared services"]
     Handles["Thread, Workspace, Scratchpad, and Sandbox handles"]
     Direct["Direct contract composition"]
     Authors["Adapter authors plus conformance"]
     One --> Managed --> Handles --> Direct --> Authors
   end
 
-  subgraph Composition[Managed composition]
+  subgraph Composition[Managed packages]
     Agent["@archer/agent"]
-    Preset["@archer/preset-local and named presets"]
+    Presets["@archer/presets<br/>/local and named presets"]
   end
 
-  subgraph Domain[Agent domain contracts]
-    Thread["@archer/thread"]
-    Tools["@archer/tools"]
-    Prompts["@archer/prompts"]
-    Resources["@archer/resources"]
-    Workspace["@archer/workspace"]
+  subgraph Capabilities[Capability packages and adapter subpaths]
+    Resources["@archer/resources<br/>/prompts /skills /tool-build"]
+    Models["@archer/models<br/>/ai-sdk"]
+    Sandboxes["@archer/sandbox<br/>/process /docker /qemu-hvf"]
+    Files["@archer/files<br/>/fs /git /s3 /materializers"]
+    Observe["@archer/observability<br/>/pino /opentelemetry"]
+    Transports["@archer/transports<br/>/http /sse /websocket /stdio"]
   end
 
-  subgraph Infrastructure[Infrastructure contracts]
-    Cells["@archer/cells"]
-    Model["@archer/model"]
-    Sandbox["@archer/sandbox"]
-    Materializer["@archer/materializer"]
-    Files["@archer/files"]
-    Authority["@archer/authority"]
-    Diagnostics["@archer/diagnostics"]
-    Stream["@archer/stream"]
-    Core["@archer/core"]
+  subgraph Kernel[Composable kernel]
+    Core["@archer/core<br/>Program, Cells, streams, authority, diagnostics"]
+    Reactive["RxJS runtime<br/>internal hot graphs"]
   end
 
-  One --> Preset --> Agent
+  One --> Presets --> Agent
   Managed --> Agent
-  Handles --> Thread
-  Handles --> Workspace
-  Handles --> Sandbox
-  Direct --> Cells
+  Handles --> Agent
+  Handles --> Files
+  Handles --> Sandboxes
+  Direct --> Core
   Direct --> Files
-  Direct --> Model
-  Direct --> Authority
+  Direct --> Models
 
-  Agent --> Thread
-  Agent --> Workspace
-  Agent --> Sandbox
-  Agent --> Diagnostics
-  Thread --> Cells
-  Thread --> Model
-  Thread --> Tools
-  Thread --> Prompts
-  Thread --> Resources
-  Tools --> Sandbox
-  Tools --> Resources
-  Prompts --> Resources
+  Agent --> Core
+  Agent --> Files
+  Agent --> Models
+  Agent --> Resources
+  Agent --> Sandboxes
+  Presets --> Observe
+  Presets --> Files
+  Presets --> Models
+  Presets --> Sandboxes
+  Resources --> Core
   Resources --> Files
-  Workspace --> Materializer
-  Workspace --> Files
-  Sandbox --> Materializer
-  Materializer --> Files
-  Cells --> Stream
-  Model --> Stream
-  Sandbox --> Stream
-  Diagnostics --> Stream
-  Stream --> Core
+  Resources --> Models
+  Models --> Core
   Files --> Core
-  Authority --> Core
-
-  subgraph Runtime[First-party runtime implementations]
-    Reactive["RxJS activation, internal only"]
-    ManagedRuntime["Managed orchestration"]
-  end
-  Reactive -. implements .-> Stream
-  ManagedRuntime -. implements .-> Agent
-
-  subgraph Adapters[Replaceable adapters]
-    Products["AI SDK, SQLite, S3, Git, Docker, QEMU"]
-    Operations["Pino, OpenTelemetry, HTTP/SSE, CLI"]
-    ThirdParty["Third-party implementations"]
-  end
-  Products -. implements .-> Infrastructure
-  Operations -. projects .-> Diagnostics
-  Operations -. projects .-> Handles
-  ThirdParty -. implements .-> Infrastructure
+  Sandboxes --> Core
+  Sandboxes --> Files
+  Observe --> Core
+  Transports --> Agent
+  Reactive -. implements .-> Core
+  Authors -. implement .-> Core
+  Authors -. implement .-> Files
+  Authors -. implement .-> Models
+  Authors -. implement .-> Sandboxes
 ```
 
-Contract packages never import adapters. Installing file or transcript types
-does not install RxJS, a provider SDK, Pino, OpenTelemetry, SQLite, an S3
-client, Git, Docker, or QEMU.
+An npm package is a distribution and dependency decision, not an architecture
+boundary. Each capability package keeps contract source modules at its root and
+first-party implementations behind explicit subpaths. Contract modules never
+import adapter modules. Export maps and declaration checks enforce that
+direction even when both ship in one package.
+
+Root imports perform no registration, discovery, logging, environment reads,
+or adapter construction. Adapter-only dependencies may ship with the
+capability package or remain optional peers, but they load only when their
+factory is selected. Importing `@archer/sandbox` does not initialize Docker,
+while importing `@archer/sandbox/docker` gives one supported factory and its
+exact types. A third-party adapter remains an ordinary independent package that
+implements the same root contract and runs the same conformance suite.
 
 ## Durable execution
 
@@ -238,6 +325,158 @@ focused pure lifecycle Program. Archer will extract the useful SQLite,
 conditional-write, snapshot, fencing, outbox, and RxJS activation mechanisms
 from the retained runtime without retaining its broad public classes.
 
+The durable Cell aggregate remains a pure value. Its retained activation
+handle is reactive because acknowledgement, renewal, recovery, wake, and
+fencing can occur without a caller method:
+
+```ts
+export type CellHandleSnapshot<StateView> = Readonly<{
+  cellId: CellId;
+  acknowledged: Readonly<{
+    sequence: CellSequence;
+    cursor: CellCursor;
+    fence: FenceEpoch;
+    state: StateView;
+  }>;
+  lifecycle:
+    | Readonly<{ status: 'active'; lease: ActivationLeaseView }>
+    | Readonly<{ status: 'recovering'; recovery: CellRecoveryState }>
+    | Readonly<{ status: 'fenced'; evidence: FencingEvidence }>
+    | Readonly<{ status: 'released'; evidence: CellReleaseEvidence }>;
+}>;
+
+export interface CellHandle<StateView, Event, Effect>
+  extends
+    LiveState<CellHandleSnapshot<StateView>>,
+    AtomicLiveAttachmentSource<
+      CellHandleSnapshot<StateView>,
+      'cell',
+      CellCursor,
+      CellObservation<Event, Effect>,
+      Readonly<{ activity: CellActivityEvent }>
+    >,
+    OwnedHandle<CellReleaseEvidence> {
+  readonly durableEvents: ReplayableEventStream<CellObservation<Event, Effect>, CellCursor>;
+  readonly activityEvents: TransientEventStream<CellActivityEvent>;
+  dispatch(command: CellCommand<Event>, grant: GrantRef<'cell-dispatch'>): Promise<Acknowledgement>;
+}
+```
+
+`StateView` is a bounded, immutable, codec-backed projection of acknowledged
+Program state. A Cell protocol selects its pure projection explicitly; a
+generic host does not assume every complete aggregate is suitable for a UI or
+remote snapshot. Full canonical state remains available through the Cell's
+authorized durable query or replay contract. The snapshot never presents an
+unacknowledged reducer result as canonical.
+
+Closing releases this activation or attachment and preserves recovery
+evidence. It does not delete Cell state or manufacture a domain cancellation.
+Direct Cell users receive the same hot projection that managed Thread and
+TaskRun paths consume.
+
+A non-agent Program connects acknowledged effect intents to replaceable live
+work through the same finite contract used by Archer's built-in domains:
+
+```ts
+export interface EffectAdapter<Effect, Event, Progress> {
+  start(
+    attempt: AcknowledgedEffectAttempt<Effect>,
+  ): Promise<LiveOperation<Progress, EffectAttemptResult<Event>, EffectAttemptCloseEvidence>>;
+}
+```
+
+The Cell runtime calls `start()` only after it claims the acknowledged intent
+under the current fence. The outer Promise validates and constructs an
+already-running attempt. Its terminal result proposes an event; only the Cell's
+subsequent acknowledgement can make that event durable. Subscribing to progress
+never claims or retries an effect. Domain adapters such as models, tools, and
+sandboxes refine this shape with their exact request and result types.
+
+The replaceable host also owns the public construction and restoration port:
+
+```ts
+export type CellProtocol<State, StateView, Event, Effect> = Readonly<{
+  protocolRevision: CellProtocolRevision;
+  programRevision: ProgramRevision;
+  projectionRevision: StateProjectionRevision;
+  durability: CellDurabilityClass;
+  program: Program<State, Event, Effect>;
+  projectState(state: State): StateView;
+  codecs: Readonly<{
+    state: Codec<State>;
+    stateView: BoundedCodec<StateView>;
+    event: Codec<Event>;
+    effect: Codec<Effect>;
+  }>;
+}>;
+
+export type CellCreateRequest<State, StateView, Event, Effect> = Readonly<{
+  cellId: CellId;
+  initialState: State;
+  protocol: CellProtocol<State, StateView, Event, Effect>;
+  idempotencyKey: IdempotencyKey;
+}>;
+
+export type CellAttachRequest<State, StateView, Event, Effect> = Readonly<{
+  cellId: CellId;
+  protocol: CellProtocol<State, StateView, Event, Effect>;
+}>;
+
+export type CellStateReadRequest<State> = Readonly<{
+  cellId: CellId;
+  protocolRevision: CellProtocolRevision;
+  stateCodec: Codec<State>;
+  at?: CellSequence;
+}>;
+
+export type CellStateReadOutcome<State> =
+  | Readonly<{ kind: 'found'; sequence: CellSequence; state: State }>
+  | Readonly<{ kind: 'not-found'; cellId: CellId }>
+  | Readonly<{ kind: 'restore-refused'; refusal: CellRestoreRefusal }>
+  | Readonly<{ kind: 'unavailable'; failure: CellHostFailure }>;
+
+export type OpenedCell<StateView, Event, Effect> = Readonly<{
+  kind: 'opened';
+  handle: CellHandle<StateView, Event, Effect>;
+}>;
+
+export type CellCreateOutcome<StateView, Event, Effect> =
+  | OpenedCell<StateView, Event, Effect>
+  | Readonly<{ kind: 'already-exists'; cellId: CellId }>
+  | Readonly<{ kind: 'unavailable'; failure: CellHostFailure }>;
+
+export type CellAttachOutcome<StateView, Event, Effect> =
+  | OpenedCell<StateView, Event, Effect>
+  | Readonly<{ kind: 'not-found'; cellId: CellId }>
+  | Readonly<{ kind: 'restore-refused'; refusal: CellRestoreRefusal }>
+  | Readonly<{ kind: 'unavailable'; failure: CellHostFailure }>;
+
+export interface CellHost extends OwnedHandle<CellHostCloseEvidence> {
+  create<State, StateView, Event, Effect>(
+    request: CellCreateRequest<State, StateView, Event, Effect>,
+    grant: GrantRef<'cell-create'>,
+  ): Promise<CellCreateOutcome<StateView, Event, Effect>>;
+  attach<State, StateView, Event, Effect>(
+    request: CellAttachRequest<State, StateView, Event, Effect>,
+    grant: GrantRef<'cell-attach'>,
+  ): Promise<CellAttachOutcome<StateView, Event, Effect>>;
+  readState<State>(
+    request: CellStateReadRequest<State>,
+    grant: GrantRef<'cell-read'>,
+  ): Promise<CellStateReadOutcome<State>>;
+}
+```
+
+Create binds Cell identity and idempotency to exact Program, projection, codec,
+and durability revisions. Attach validates those revisions against stored
+state before returning the hot handle. Missing state, incompatible restore,
+unavailability, and duplicate creation are tagged outcomes that cannot expose
+a partially restored handle. A broken host protocol or invalid local
+construction may reject before a handle exists. Creation, attachment, full
+state reads, and dispatch each verify their exact current authority. The full
+state query is finite and does not turn an unbounded aggregate into live UI
+state.
+
 ### Thread, Turn, and Item
 
 A Thread is durable agent history. V1 permits one active Turn per Thread. A
@@ -267,6 +506,71 @@ orphan tool result was synthesized.
 Budgets are durable Thread state. They cover model steps, tool invocations,
 input and output tokens, optional cost, deadlines, live output, and Workspace
 or Scratchpad quotas. Metrics report those facts but do not enforce them.
+
+A Turn remains durable state inside its Thread. V1 does not create a second
+Turn owner, reducer, or callback graph. `ThreadHandle` exposes the current Turn,
+replayable Items, transient activity, commands, and a finite wait projected
+from the same graph:
+
+```ts
+export type TurnState =
+  | Readonly<{ status: 'starting'; turnId: TurnId }>
+  | Readonly<{ status: 'running'; turnId: TurnId; activity: TurnActivity }>
+  | Readonly<{
+      status: 'awaiting-approval';
+      turnId: TurnId;
+      approvals: readonly [ApprovalRequest, ...ApprovalRequest[]];
+    }>
+  | Readonly<{ status: 'recovering'; turnId: TurnId; recovery: TurnRecoveryState }>
+  | Readonly<{ status: 'cancelling'; turnId: TurnId; reason: string }>
+  | Readonly<{ status: 'completed'; turnId: TurnId; outcome: CompletedTurnOutcome }>
+  | Readonly<{ status: 'failed'; turnId: TurnId; outcome: FailedTurnOutcome }>
+  | Readonly<{ status: 'cancelled'; turnId: TurnId; outcome: CancelledTurnOutcome }>;
+
+export type ThreadSnapshot = Readonly<{
+  threadId: ThreadId;
+  workspaceId: WorkspaceId;
+  revision: ThreadRevision;
+  transcript: Readonly<{ lastSequence: ItemSequence; cursor: ThreadCursor }>;
+  budget: ThreadBudgetState;
+  activeResourceSet: ResourceSetRef;
+  turn: Readonly<{ status: 'idle' }> | TurnState;
+}>;
+
+export type TurnWaitSettlement =
+  Readonly<{ kind: 'outcome'; outcome: TurnOutcome }> | Readonly<{ kind: 'detached'; evidence: ThreadCloseEvidence }>;
+
+export type TurnStartCommand = Readonly<{
+  input: TurnInput;
+  expectedRevision: ThreadRevision;
+  idempotencyKey: IdempotencyKey;
+}>;
+
+export interface ThreadHandle
+  extends
+    LiveState<ThreadSnapshot>,
+    AtomicLiveAttachmentSource<
+      ThreadSnapshot,
+      'thread',
+      ThreadCursor,
+      ThreadEvent,
+      Readonly<{ presentation: ThreadPresentationEvent }>
+    >,
+    OwnedHandle<ThreadCloseEvidence> {
+  readonly durableEvents: ReplayableEventStream<ThreadEvent, ThreadCursor>;
+  readonly presentationEvents: TransientEventStream<ThreadPresentationEvent>;
+  startTurn(command: TurnStartCommand, grant: GrantRef<'turn-start'>): Promise<TurnStartReceipt>;
+  waitForTurn(turnId: TurnId): Promise<TurnWaitSettlement>;
+  decideApproval(command: ApprovalDecisionCommand, grant: GrantRef<'tool-approval'>): Promise<ApprovalReceipt>;
+  cancelTurn(command: TurnCancellationCommand, grant: GrantRef<'turn-cancel'>): Promise<CancellationReceipt>;
+}
+```
+
+Historical Turns and Items are readonly values. `waitForTurn()` is a waiting
+facet over the Thread graph, not another live owner. It resolves detached if
+the Thread attachment closes first. `TaskRun` projects the task-specific view
+from these exact Cell and Thread sources. It does not fold a parallel event
+stream or maintain a managed-only reducer.
 
 ### Acknowledgement sequence
 
@@ -302,80 +606,356 @@ restored. Observers never participate in this commit path.
 
 ## Public asynchronous boundary
 
-RxJS remains the reactive core for live activation, finite composition,
-superseding lanes, cancellation, timers, and fan-out. It is not part of the
-public programming model. No contract declaration may import or name an RxJS
-type.
+RxJS owns live activation, state projection, finite composition, superseding
+lanes, cancellation, timers, and fan-out. Every first-party live source has one
+shared hot graph. A subscriber observes existing work. It never causes another
+provider call, effect attempt, reducer, file import, or sandbox process.
 
-A bare `AsyncIterable` is too weak because it does not state buffer bounds,
-fan-out, replay, loss, terminal behavior, or ownership. Archer therefore owns
-a small standard-JavaScript bridge. The bridge separates observation from
-finite live work:
+RxJS is not part of the public programming model. No contract declaration may
+import or name an RxJS type. Archer owns four standard-JavaScript temporal
+contracts. A retained owner uses `LiveState`. Durable history uses
+`ReplayableEventStream`. Presentation and diagnostics use
+`TransientEventStream`. One finite attempt uses `LiveOperation`.
+
+### Current state
 
 ```ts
-export type DeliveryOptions = Readonly<{
-  capacityItems: number;
-  capacityBytes: number;
-  overflow: 'resume' | 'gap' | 'detach';
-  after?: string;
-}>;
+export type Unsubscribe = () => void;
 
-export type StreamClose =
-  | Readonly<{ kind: 'completed'; lastCursor?: string }>
-  | Readonly<{ kind: 'detached'; lastCursor?: string }>
-  | Readonly<{ kind: 'resume-required'; after: string }>
-  | Readonly<{ kind: 'failed'; failure: ProtocolFailure }>;
-
-export interface EventSubscription<Event> extends AsyncIterable<Event>, AsyncDisposable {
-  readonly closed: Promise<StreamClose>;
-  close(): Promise<StreamClose>;
-}
-
-export interface EventStream<Event> {
-  subscribe(options: DeliveryOptions): EventSubscription<Event>;
-}
-
-export interface LiveOperation<Event, Result, CloseEvidence> extends OwnedHandle<CloseEvidence> {
-  readonly events: EventStream<Event | DeliveryGap>;
-  readonly result: Promise<Result>;
-  abort(reason: string): Promise<AttemptAbortEvidence>;
+export interface LiveState<State> {
+  getSnapshot(): State;
+  subscribe(listener: (snapshot: State) => void): Unsubscribe;
 }
 ```
 
-The semantics are deliberate:
+`getSnapshot()` returns the same immutable object identity until state changes.
+`subscribe()` establishes observation synchronously and returns synchronous,
+idempotent detachment. Notifications run outside the reducer and effect commit
+stack. Each subscriber has one latest-state slot, so rapid transitions may
+coalesce rather than create an unbounded callback queue. Consumers that require
+every transition use the handle's ordered stream.
+
+Applications subscribe and then read the snapshot to close the setup race.
+Framework adapters can map this contract to React `useSyncExternalStore`, Vue,
+Svelte, or Solid without an Archer-specific runtime. The runtime does not await
+a listener. A listener failure is isolated and reported through diagnostics;
+it cannot fail the source or another listener. Code that blocks the entire
+JavaScript thread can still stall its host process. Applications that require
+process isolation consume the same state through a transport or worker.
+
+V1 ships `@archer/core/react` with a generic `useLiveState(source)` binding over
+`useSyncExternalStore`. It keeps no Archer domain state and works for TaskRun,
+Thread, Cell, Workspace, Scratchpad, and sandbox handles. Other framework
+bindings can implement the same tiny contract without importing RxJS.
+
+The final snapshot remains readable after its handle closes. A state
+subscription created after close is inert and returns an idempotent no-op
+detacher. `closed` settles only after the implementation has stopped future
+state callbacks for that handle.
+
+### Ordered delivery
+
+A bare `AsyncIterable` is too weak because it does not state buffer bounds,
+fan-out, replay, loss, terminal behavior, or ownership. Archer therefore owns
+a bounded event bridge whose source capability is visible in the type:
+
+```ts
+declare const streamCursorSource: unique symbol;
+
+export type StreamCursor<Source extends string> = string & {
+  readonly [streamCursorSource]: Source;
+};
+
+export type CellCursor = StreamCursor<'cell'>;
+export type ThreadCursor = StreamCursor<'thread'>;
+export type TaskCursor = StreamCursor<'task'>;
+export type WorkspaceCursor = StreamCursor<'workspace'>;
+export type ScratchpadCursor = StreamCursor<'scratchpad-checkpoint'>;
+export type ResourceLifecycleCursor = StreamCursor<'resource-lifecycle'>;
+
+export type DeliveryBounds = Readonly<{
+  capacityItems?: number;
+  capacityBytes?: number;
+}>;
+
+export type ReplayDeliveryOptions<Cursor extends StreamCursor<string>> = DeliveryBounds &
+  Readonly<{
+    after?: Cursor;
+    overflow?: 'resume-required' | 'detach';
+  }>;
+
+export type TransientDeliveryOptions = DeliveryBounds &
+  Readonly<{
+    overflow?: 'gap' | 'detach';
+  }>;
+
+export type DeliveryGap = Readonly<{
+  kind: 'gap';
+  source: string;
+  epoch: string;
+  lostItems: number;
+  lostBytes: number;
+}>;
+
+export type ReplayableEvent<Event, Cursor extends StreamCursor<string>> = Readonly<{
+  cursor: Cursor;
+  value: Event;
+}>;
+
+export type ReplayStreamClose<Cursor extends StreamCursor<string>> =
+  | Readonly<{ kind: 'completed'; after?: Cursor }>
+  | Readonly<{ kind: 'detached'; after?: Cursor }>
+  | Readonly<{ kind: 'resume-required'; after: Cursor }>
+  | Readonly<{
+      kind: 'reseed-required';
+      reason: 'cursor-expired' | 'source-replaced';
+    }>
+  | Readonly<{ kind: 'failed'; failure: ProtocolFailure }>;
+
+export type TransientStreamClose =
+  | Readonly<{ kind: 'completed' }>
+  | Readonly<{ kind: 'detached' }>
+  | Readonly<{ kind: 'failed'; failure: ProtocolFailure }>;
+
+export interface EventSubscription<Event, Close, Overflow extends string>
+  extends AsyncIterable<Event>, AsyncDisposable {
+  readonly delivery: Readonly<{
+    capacityItems: number;
+    capacityBytes: number;
+    overflow: Overflow;
+  }>;
+  readonly closed: Promise<Close>;
+  close(): Promise<Close>;
+}
+
+export interface ReplayableEventStream<Event, Cursor extends StreamCursor<string>> {
+  readonly kind: 'replayable';
+  subscribe(
+    options?: ReplayDeliveryOptions<Cursor>,
+  ): EventSubscription<ReplayableEvent<Event, Cursor>, ReplayStreamClose<Cursor>, 'resume-required' | 'detach'>;
+}
+
+export interface TransientEventStream<Event> {
+  readonly kind: 'transient';
+  subscribe(
+    options?: TransientDeliveryOptions,
+  ): EventSubscription<Event | DeliveryGap, TransientStreamClose, 'gap' | 'detach'>;
+}
+
+declare const stateVersionBrand: unique symbol;
+
+export type StateVersion = string & {
+  readonly [stateVersionBrand]: true;
+};
+
+export type VersionedSnapshot<State> = Readonly<{
+  source: string;
+  epoch: string;
+  version: StateVersion;
+  snapshot: State;
+}>;
+
+export type StateUpdateClose =
+  | Readonly<{ kind: 'completed'; epoch: string; version: StateVersion }>
+  | Readonly<{ kind: 'detached'; epoch: string; version: StateVersion }>
+  | Readonly<{ kind: 'failed'; failure: ProtocolFailure }>;
+
+export interface StateUpdateSubscription<State> extends AsyncIterable<VersionedSnapshot<State>>, AsyncDisposable {
+  readonly closed: Promise<StateUpdateClose>;
+  close(): Promise<StateUpdateClose>;
+}
+
+export type LiveStateSeed<
+  State,
+  Source extends string,
+  Cursor extends StreamCursor<Source>,
+  Transient extends Readonly<Record<string, unknown>>,
+> = Readonly<{
+  state: VersionedSnapshot<State>;
+  durable?: Readonly<{ source: Source; at: Cursor }>;
+  transient: Readonly<{
+    [Plane in keyof Transient]: Readonly<{ source: string; epoch: string }>;
+  }>;
+}>;
+
+export type LiveAttachmentOptions<
+  Cursor extends StreamCursor<string>,
+  Transient extends Readonly<Record<string, unknown>>,
+> = Readonly<{
+  durable?: [Cursor] extends [never] ? never : ReplayDeliveryOptions<Cursor>;
+  transient?: Partial<{
+    [Plane in keyof Transient]: TransientDeliveryOptions;
+  }>;
+}>;
+
+export interface AtomicLiveAttachment<
+  State,
+  Source extends string,
+  Cursor extends StreamCursor<Source>,
+  DurableEvent,
+  Transient extends Readonly<Record<string, unknown>>,
+> extends OwnedHandle<LiveAttachmentCloseEvidence> {
+  readonly seed: LiveStateSeed<State, Source, Cursor, Transient>;
+  readonly stateUpdates: StateUpdateSubscription<State>;
+  readonly durable: [Cursor] extends [never]
+    ? undefined
+    : EventSubscription<ReplayableEvent<DurableEvent, Cursor>, ReplayStreamClose<Cursor>, 'resume-required' | 'detach'>;
+  readonly transient: Readonly<{
+    [Plane in keyof Transient]: EventSubscription<
+      Transient[Plane] | DeliveryGap,
+      TransientStreamClose,
+      'gap' | 'detach'
+    >;
+  }>;
+}
+
+export interface AtomicLiveAttachmentSource<
+  State,
+  Source extends string,
+  Cursor extends StreamCursor<Source>,
+  DurableEvent,
+  Transient extends Readonly<Record<string, unknown>>,
+> {
+  attachLive(
+    options?: LiveAttachmentOptions<Cursor, Transient>,
+  ): Promise<AtomicLiveAttachment<State, Source, Cursor, DurableEvent, Transient>>;
+}
+
+export type AttemptAbortCommand = Readonly<{
+  reason: string;
+  idempotencyKey: IdempotencyKey;
+}>;
+
+export interface LiveOperation<Event, Result, CloseEvidence> extends OwnedHandle<CloseEvidence> {
+  readonly events: TransientEventStream<Event>;
+  readonly result: Promise<Result>;
+  abort(command: AttemptAbortCommand): Promise<AttemptAbortEvidence>;
+}
+```
+
+`StateVersion` uses a versioned codec for a monotonic non-negative integer
+within one state source and epoch and does not rely on JavaScript safe-integer
+range. `StateUpdateSubscription` owns one latest-state slot. Coalescing versions
+loses no current-state meaning; a consumer that needs every transition uses the
+corresponding ordered stream. A changed source or epoch requires a new atomic
+seed rather than comparing unrelated versions.
+
+`attachLive()` is the public transport and worker bridge. The source attaches
+all requested queues to the existing graph, captures one state version,
+durable cursor, and set of transient epochs from that point, and only then
+releases updates. It owns no reducer and starts no work. Every hot handle below
+implements its typed specialization. Ordinary in-process applications use
+`LiveState` and named streams directly; adapter authors use `attachLive()` when
+the setup must cross an asynchronous boundary without a race.
+
+`seed.durable.at` is the cursor consistent with the seeded snapshot. With no
+requested `after`, the durable subscription begins strictly after that cursor.
+With `after`, it replays from the requested retained cursor, crosses the seed
+barrier once, and continues live without duplication or loss. Durable events
+are observations, not inputs to a hidden client state reducer.
+Closing the atomic attachment detaches its state and event subscriptions as one
+owned bridge. It does not close the source handle or cancel its work.
+
+Each source publishes safe default bounds. Infrastructure callers may narrow or
+raise them within source-declared limits. The selected policy is inspectable on
+the subscription. Item bounds count accepted values. Byte bounds use the
+source protocol's versioned codec over the event's canonical UTF-8 or binary
+encoding. The same measurement function runs in process and across transports.
+
+The delivery semantics are deliberate:
 
 - A subscription owns only its bounded queue and attachment. Closing it always
   detaches. It never cancels a Turn, provider step, process, or shared source.
-- A `LiveOperation` owns one finite model or sandbox attempt. `abort()` actively
-  tears down that attempt. Its `result` resolves once with a tagged terminal
-  value after accepted live events have been closed.
-- A `TaskRun` is not a `LiveOperation`. It represents durable work that may
-  survive the current process. Its `cancel()` method is an authorized durable
-  command. Closing the handle only releases the caller's attachment.
-- Durable observations use cursors. They are not discarded. A lagging
+- Replayable observations use source-branded cursors. They are not discarded. A lagging
   subscriber closes with `resume-required` and can reopen from its last safe
   cursor.
-- Transient model and execution deltas may use `gap`. The next event identifies
-  the source, effect, attempt, channel, offset, items, and bytes lost.
-- `detach` ends only the slow subscription. `resume` is valid only for a source
-  whose values are durably replayable.
-- Backpressure is used only where the source can pause safely. Provider sockets
-  and process pipes are drained into bounded queues; the bridge does not call a
-  non-pausable source lossless.
+- Transient deltas and diagnostics may use `gap`. The gap identifies the source
+  epoch and exact items and bytes lost. No cursor or resume option exists on
+  that type.
+- A cursor codec validates source identity, tenant or scope, protocol revision,
+  and retention window. A cursor from another task, Thread, or signal plane is
+  rejected.
+- Every subscriber and diagnostic sink has an independent queue. A slow UI,
+  logger, or remote client cannot pressure the shared graph or another
+  subscriber.
+- Source-to-runtime pressure is separate. Provider sockets and process pipes
+  may pause only under a central source bound and only when their protocol says
+  pausing is safe. No subscriber controls that decision.
 - Expected failure is a tagged `Result`. Rejection is reserved for construction
   failure or an adapter protocol violation.
 
-Prompt contribution is finite and returns a Promise of ordered contributions.
-It does not need a public stream. Model steps and sandbox execution return
-`LiveOperation`s. Cell, Thread, task, approval, and diagnostic observation use
-`EventStream`s.
+Each replayable envelope cursor resumes strictly after that envelope. Close
+evidence reports the last cursor returned by the iterator, never merely queued.
+A transient subscription reserves delivery for its coalesced gap marker, so
+continued overflow cannot silently lose the fact that events were lost.
+Subscribing after a handle-owned source has closed returns an already-completed
+subscription and emits nothing. Durable history remains available by
+reattaching through its directory or store. An expired or replaced replay
+source closes with `reseed-required`; a cursor for a structurally different
+source is a protocol failure.
 
-`@archer/stream` supplies the dependency-free queue implementation and public
-conformance helpers. First-party runtime code adapts internal Observables at
-that boundary. Declaration checks reject accidental `rxjs` imports, and stream
-conformance covers byte and item limits, cursor resume, gap accounting,
-iterator `return()`, abort propagation, idempotent close, single result, and no
-post-close delivery.
+A `LiveOperation` owns one finite admitted attempt. `abort()` is the only
+operation method that requests termination. It resolves after the attempt
+reaches a tagged aborted result or produces evidence that cleanup could not be
+proved. `close()` never aliases `abort()`. Closing an active operation waits
+for its result, so managed shutdown explicitly aborts first when it intends to
+stop the attempt.
+
+Terminal order is exact. The source first stops accepting progress and seals
+each subscription queue, then settles `result`, then settles the operation's
+immutable `closed` evidence when close is requested or parent ownership ends.
+An existing subscription may still pull progress accepted before the seal; it
+receives those values in FIFO order and then its stream close. `result` and the
+operation's close never wait for a slow subscriber. No progress is accepted
+after `result`, and a new subscription after the seal is already completed.
+Natural completion, abort, protocol failure, and concurrent close all produce
+one result and one immutable close record. A parent may retain the underlying
+durable effect, but it does not retain this attempt handle.
+
+A `TaskRun` is not a `LiveOperation`. It represents durable work that may
+survive the current process. Its cancellation method records an authorized
+durable command. Closing the handle releases the caller's attachment and may
+settle that attachment as detached without cancelling the task.
+
+Prompt contribution is finite and returns a Promise of ordered contributions.
+It does not need a public stream. Immutable values, pure compilation, authority
+verification, command receipts, and promotion remain finite. Model steps, tool
+invocations, sandbox acquisition and execution, source ingestion,
+materialization, and file ingestion use `LiveOperation` when they have
+meaningful progress or active cancellation.
+
+`@archer/core/stream` supplies the public bridge, bounded queue implementation,
+and conformance helpers. First-party runtime code adapts internal Observables
+at that boundary. Declaration checks reject accidental `rxjs` imports, and
+stream conformance covers snapshot identity, hot sharing, atomic attachment,
+subscriber isolation, byte and item limits, cursor source validation, resume,
+gap accounting, iterator `return()`, abort and close races, single
+finite-operation result, and no post-close delivery.
+
+### Comparison evidence
+
+Archer does not need another private streaming vocabulary. At Grok Build commit
+`19d42e35c07a9c9244f03f6df0c4c353f970d4f9`, the reanalysis found typed sampling
+updates, one-shot result and cancellation, coalescing, event identity, and
+flush barriers, but also shared unbounded channels, hidden retries, and paths
+where buffered and direct delivery can disagree about order. Those mechanisms
+fit its actor and CLI boundary; they do not state Archer's replay, gap,
+subscriber, or attempt guarantees.
+
+At Codex commit `2151d3a5b78ca93128496b26333bc30187385a5f`, the reanalysis found
+bounded submissions, unbounded event broadcast, agent-status watches,
+app-server Thread and Turn watches, JSON-RPC notifications, durable rollout
+history, and a TypeScript JSONL iterator that folds events into a result. Each
+is reasonable at its local Rust, Tokio, or product boundary. Together they show
+the cost of leaving the temporal classes implicit: current state and living
+work are reconstructed in the core, app-server, rollout, SDK, and client
+layers.
+
+Archer has a clean TypeScript boundary and has already selected RxJS. It will
+encode the four temporal classes once and project them everywhere. The lesson
+is not that the comparison systems chose the wrong implementation technology.
+It is that Archer should not repeat their boundary duplication when its own
+premise gives it a direct alternative.
 
 ## Files as a first-party domain
 
@@ -436,9 +1016,67 @@ immutable tree before admission.
 
 A Workspace owns private mutable lineage. It starts from one immutable tree,
 accepts authorized and preconditioned edits or ingestion receipts, and may
-produce new private snapshots. Its methods include read, list, apply, rename,
-delete, snapshot, diff, and `createChangeSet`. Mutations carry an expected
-entry digest or Workspace generation so stale writers are explicit failures.
+produce new private snapshots. Its interface supports reads, listings, diffs,
+preconditioned mutations including rename and delete, ingestion, and
+`createChangeSet`. Mutations carry an expected entry digest or Workspace
+generation so stale writers are explicit failures.
+
+`WorkspaceHandle` is a hot projection of acknowledged lineage, not a file
+watcher:
+
+```ts
+export type WorkspaceSnapshot = Readonly<{
+  workspaceId: WorkspaceId;
+  lineageId: WorkspaceLineageId;
+  tree: TreeRef;
+  generation: number;
+  createdAt: Timestamp;
+  evidenceDigest: EvidenceDigest;
+}>;
+
+export type WorkspaceHandleSnapshot = Readonly<{
+  workspaceId: WorkspaceId;
+  lineageId: WorkspaceLineageId;
+  base: TreeRef;
+  head: TreeRef;
+  generation: number;
+  quota: WorkspaceQuotaState;
+  lifecycle: 'ready' | 'ingesting' | 'closing' | 'closed' | 'recovery-required';
+}>;
+
+export interface WorkspaceHandle
+  extends
+    LiveState<WorkspaceHandleSnapshot>,
+    AtomicLiveAttachmentSource<
+      WorkspaceHandleSnapshot,
+      'workspace',
+      WorkspaceCursor,
+      WorkspaceEvent,
+      Readonly<Record<never, never>>
+    >,
+    OwnedHandle<WorkspaceCloseEvidence> {
+  readonly workspaceId: WorkspaceId;
+  readonly durableEvents: ReplayableEventStream<WorkspaceEvent, WorkspaceCursor>;
+  read(request: WorkspaceReadRequest, grant: GrantRef<'workspace-read'>): Promise<WorkspaceReadOutcome>;
+  list(request: WorkspaceListRequest, grant: GrantRef<'workspace-read'>): Promise<WorkspaceListOutcome>;
+  diff(request: WorkspaceDiffRequest, grant: GrantRef<'workspace-read'>): Promise<WorkspaceDiffOutcome>;
+  apply(command: WorkspaceMutation, grant: GrantRef<'workspace-write'>): Promise<WorkspaceMutationOutcome>;
+  acceptIngestion(receipt: IngestionReceipt, grant: GrantRef<'workspace-write'>): Promise<WorkspaceMutationOutcome>;
+  createChangeSet(input: ChangeSetRequest, grant: GrantRef<'changeset-create'>): Promise<ChangeSetOutcome>;
+}
+```
+
+`WorkspaceSnapshot` is an immutable transferable lineage product.
+`WorkspaceHandleSnapshot` is the current projection of one retained handle.
+Its base, head, generation, and quota are acknowledged facts. Its `ingesting`,
+`closing`, and recovery lifecycle can be live activity and never advances
+lineage before receipt acceptance. The handle snapshot lets a late observer
+learn that state without polling. It never claims to describe unquiesced bytes
+in a physical view.
+
+Each successful mutation returns the prior and resulting generation and tree.
+Stale generation, stale entry digest, quota refusal, lineage mismatch, and
+authority refusal preserve the prior head and return tagged outcomes.
 
 A Workspace has no promotion method. `createChangeSet` compares an accepted
 private result with the declared base and produces an immutable proposal. The
@@ -458,9 +1096,89 @@ a ChangeSet by accident. An authorized import operation may copy named
 immutable scratch content into a Workspace with normal preconditions. A
 Scratchpad has no resource admission or promotion authority.
 
+Every Scratchpad handle exposes hot acknowledged summary state while its owner
+is alive. It never emits raw filesystem watcher events. `ephemeral` updates are
+transient and disappear when the owning task or Turn ends. `checkpointed` and
+`thread-durable` handles additionally expose replayable checkpoint facts:
+
+```ts
+export type ScratchpadRetention = 'ephemeral' | 'checkpointed' | 'thread-durable';
+
+export type ScratchpadLifecycle = 'ready' | 'checkpointing' | 'closing' | 'closed' | 'recovery-required';
+
+export type ScratchpadSnapshotBase = Readonly<{
+  scratchpadId: ScratchpadId;
+  owner: TaskId | ThreadId;
+  generation: number;
+  head: TreeRef;
+  quota: ScratchpadQuotaState;
+}>;
+
+export type ScratchpadSnapshot<R extends ScratchpadRetention> = R extends 'ephemeral'
+  ? Readonly<
+      ScratchpadSnapshotBase & {
+        retention: 'ephemeral';
+        checkpoint?: never;
+        lifecycle: Exclude<ScratchpadLifecycle, 'checkpointing'>;
+      }
+    >
+  : Readonly<
+      ScratchpadSnapshotBase & {
+        retention: R;
+        checkpoint?: TreeRef;
+        lifecycle: ScratchpadLifecycle;
+      }
+    >;
+
+export interface ScratchpadHandleBase<R extends ScratchpadRetention>
+  extends LiveState<ScratchpadSnapshot<R>>, OwnedHandle<ScratchpadCloseEvidence> {
+  readonly retention: R;
+  readonly updates: TransientEventStream<ScratchpadUpdate>;
+  read(request: ScratchpadReadRequest, grant: GrantRef<'scratchpad-read'>): Promise<ScratchpadReadOutcome>;
+  list(request: ScratchpadListRequest, grant: GrantRef<'scratchpad-read'>): Promise<ScratchpadListOutcome>;
+  apply(command: ScratchpadMutation, grant: GrantRef<'scratchpad-write'>): Promise<ScratchpadMutationOutcome>;
+}
+
+export interface EphemeralScratchpadHandle
+  extends
+    ScratchpadHandleBase<'ephemeral'>,
+    AtomicLiveAttachmentSource<
+      ScratchpadSnapshot<'ephemeral'>,
+      never,
+      never,
+      never,
+      Readonly<{ updates: ScratchpadUpdate }>
+    > {}
+
+export interface RetainedScratchpadHandle<R extends Exclude<ScratchpadRetention, 'ephemeral'>>
+  extends
+    ScratchpadHandleBase<R>,
+    AtomicLiveAttachmentSource<
+      ScratchpadSnapshot<R>,
+      'scratchpad-checkpoint',
+      ScratchpadCursor,
+      ScratchpadCheckpointEvent,
+      Readonly<{ updates: ScratchpadUpdate }>
+    > {
+  readonly checkpointEvents: ReplayableEventStream<ScratchpadCheckpointEvent, ScratchpadCursor>;
+  checkpoint(
+    command: Readonly<{ expectedGeneration: number; idempotencyKey: IdempotencyKey }>,
+    grant: GrantRef<'scratchpad-checkpoint'>,
+  ): Promise<ScratchpadCheckpointOutcome>;
+}
+
+export type ScratchpadHandle =
+  EphemeralScratchpadHandle | RetainedScratchpadHandle<'checkpointed'> | RetainedScratchpadHandle<'thread-durable'>;
+```
+
+Closing an attachment never chooses retention. Owner cleanup applies the
+declared policy and records deletion, checkpoint, or recovery evidence. The
+discriminator therefore changes the available commands and replay guarantee
+instead of pretending all Scratchpads have the same durability.
+
 ### Materializers
 
-`@archer/materializer` owns the contract between logical files and one
+`@archer/files/materializer` owns the contract between logical files and one
 physical execution view. A Materializer may manage a directory, volume,
 overlay, block image, mount, or remote upload. It does not decide Workspace
 lineage or sandbox policy.
@@ -472,29 +1190,28 @@ export interface Materializer<Target> {
   readonly adapterId: string;
   readonly protocolVersion: 1;
 
-  materialize(input: {
+  startMaterialization(input: {
     workspace: TreeRef;
     resources: readonly ReadonlyTreeMount[];
     scratchpads: readonly ScratchpadMount[];
     target: Target;
     idempotencyKey: IdempotencyKey;
     grant: GrantRef<'files-materialize'>;
-    signal?: AbortSignal;
-  }): Promise<MaterializedView>;
+  }): Promise<LiveOperation<MaterializationEvent, MaterializationResult, MaterializationCloseEvidence>>;
 }
 
 export interface MaterializedView extends OwnedHandle<MaterializationEvidence> {
   readonly viewId: MaterializedViewId;
   readonly base: TreeRef;
+  readonly generation: number;
   readonly workspacePath: '/workspace';
 
-  ingest(input: {
+  startIngestion(input: {
     quiescence: SandboxQuiescence;
     expectedBase: TreeRef;
     expectedGeneration: number;
     grant: GrantRef<'files-ingest'>;
-    signal?: AbortSignal;
-  }): Promise<IngestionReceipt>;
+  }): Promise<LiveOperation<IngestionEvent, IngestionResult, IngestionCloseEvidence>>;
 }
 ```
 
@@ -506,7 +1223,16 @@ Resource trees are read-only. The Workspace tree is writable. Scratchpads use
 separate roots and retention rules. Agent code and arbitrary subprocesses see
 ordinary operating-system paths and do not import an Archer filesystem SDK.
 
-Ingestion begins only after the sandbox supplies quiescence evidence that
+The Materializer's outer Promise covers validation, current authority, target
+pairing, and construction of one already-running operation. Materialization
+and ingestion progress, active abort, partial cleanup, and one tagged result
+belong to that operation. A synchronous adapter returns an already-terminal
+hot operation rather than creating a Promise-only path.
+
+`MaterializedView` does not implement `LiveState`. Arbitrary contained
+processes may mutate its disk without producing acknowledged logical file
+facts. Its fixed `generation` is the precondition for ingestion, not a claim
+about the current bytes. Ingestion begins only after the sandbox supplies quiescence evidence that
 admitted processes can no longer mutate the view. It walks the complete
 Workspace root, rejects unsupported entries and path escapes, enforces quotas,
 hashes all bytes, and publishes a new verified tree. A partial, stale,
@@ -562,6 +1288,20 @@ Promotion is outside task execution. A promotion service:
 5. rejects structural or policy conflicts with recovery evidence;
 6. advances the canonical reference through compare-and-swap.
 
+```ts
+export interface PromotionService extends OwnedHandle<PromotionServiceCloseEvidence> {
+  promote(request: PromotionRequest, grant: GrantRef<'workspace-promote'>): Promise<PromotionOutcome>;
+}
+```
+
+`PromotionRequest` binds the exact ChangeSet, expected canonical head, review
+revisions, named check revisions, policy revision, and idempotency key. The
+tagged outcome distinguishes success, stale head, structural conflict, rejected
+review, failed or stale check, policy refusal, authority refusal, and ambiguous
+compare-and-swap. Promotion remains one finite revalidated command. If a check
+has live progress, that check run is its own `LiveOperation`; promotion consumes
+its terminal evidence.
+
 A successful task has `promotion: null`. Direct canonical bind mounts and
 automatic commits are not managed shortcuts.
 
@@ -582,6 +1322,29 @@ Revocation is a new durable fact. It does not rewrite history. It blocks future
 activation or invocation according to policy. The request already acknowledged
 for a Turn and every tool call it caused remain pinned to their ResourceSet.
 
+Resource and profile control exposes replayable lifecycle facts without making
+an immutable ResourceSet mutate underneath a Turn:
+
+```ts
+export interface ResourceControl extends OwnedHandle<ResourceControlCloseEvidence> {
+  readonly lifecycleEvents: ReplayableEventStream<ResourceLifecycleEvent, ResourceLifecycleCursor>;
+  getProfile(profileId: ProfileId, grant: GrantRef<'resource-read'>): Promise<ProfileRevision>;
+  updateProfile(command: ProfileUpdate, grant: GrantRef<'profile-write'>): Promise<ProfileUpdateOutcome>;
+  admit(command: ResourceAdmissionCommand, grant: GrantRef<'resource-admit'>): Promise<ResourceAdmissionOutcome>;
+  revoke(command: ResourceRevocationCommand, grant: GrantRef<'resource-revoke'>): Promise<ResourceRevocationOutcome>;
+  compile(input: CompileResourceSetInput, grant: GrantRef<'resource-read'>): Promise<CompiledResourceSetReceipt>;
+}
+```
+
+Each mutating command carries an expected control revision and returns a
+durable receipt or exact refusal. The compilation receipt binds the immutable
+ResourceSet, profile revision, admission and revocation frontier, compiler
+revision, and evidence digest. `ThreadHandle.startTurn()` acknowledges that
+receipt before a model effect exists. Lifecycle subscribers can react to
+admission, activation, and revocation without polling mutable names, but their
+observations never replace the current checks used for activation or
+invocation.
+
 The compiler validates Workspace binding, active admission, dependency closure,
 model membership, exact tree identity, unique model-facing names, skill
 dependencies, secret ambiguity, sandbox compatibility, and deterministic
@@ -594,12 +1357,12 @@ descriptions and a small active catalogue. Loading a skill or tool compiles a
 new ResourceSet for the next Turn boundary. No catalogue changes in the middle
 of one model and tool causal chain.
 
-`@archer/prompts` supplies finite, ordered prompt contributions and a default
+`@archer/resources/prompts` supplies finite, ordered prompt contributions and a default
 compiler. Contributions return Promises, carry source and revision identity,
 and are recorded with the request they influenced. There is no public
 Observable for prompt compilation.
 
-`@archer/tools` owns raw-call binding, approval requests, invocation identity,
+`@archer/agent/tools` owns raw-call binding, approval requests, invocation identity,
 secret leasing, sandbox execution, and terminal tool outcomes. A friendly tool
 name is never authority or replay identity. A pinned invocation carries the
 resource revision, artifact tree, ResourceSet, request digest, effect, attempt,
@@ -610,9 +1373,28 @@ activation, and sandbox invocation path as human-authored code. It does not
 become a trusted host extension. V1 tool builds run no package-manager lifecycle
 scripts, install no ambient packages, and admit no native executable dependency.
 
+Resource and tool builds that expose meaningful progress are finite
+`LiveOperation`s. `@archer/agent/tools` uses the same contract for every
+admitted invocation, whether the implementation runs in a sandbox, on a remote
+service, or in a trusted first-party host:
+
+```ts
+export interface ToolExecutor {
+  invoke(
+    input: PinnedToolInvocation,
+  ): Promise<LiveOperation<ToolInvocationEvent, ToolInvocationResult, ToolInvocationCloseEvidence>>;
+}
+```
+
+The invocation operation begins only after the Thread Program acknowledges the
+exact call and attempt. It exposes bounded output and progress, active abort,
+one terminal result, and cleanup evidence. Each proposal still receives one
+durable terminal Item before the next model request. No adapter may replace
+this with a Promise-only tool path or callback registry.
+
 ## Models
 
-`@archer/model` owns provider-neutral request, ordered response, usage, delta,
+`@archer/models` owns provider-neutral request, ordered response, usage, delta,
 terminal result, and failure values. Its discriminated target types retain
 provider-specific controls. An OpenAI target accepts OpenAI controls, an
 Anthropic target accepts Anthropic controls, and an allowlisted compatible
@@ -623,6 +1405,19 @@ chooses the next request. The first-party AI SDK adapter disables SDK retries,
 normalizes provider values at the boundary, and excludes credential values and
 raw provider loggers from the request. Retry classification is advice. A new
 attempt is admitted and recorded by the Cell-owned runtime.
+
+```ts
+export interface ModelRouter extends OwnedHandle<ModelRouterCloseEvidence> {
+  startStep(request: ModelStepRequest): Promise<LiveOperation<ModelStepEvent, ModelStepResult, ModelStepCloseEvidence>>;
+}
+```
+
+The outer Promise covers request validation, exact target resolution, and
+construction of one already-running attempt. Provider, cancellation, limit,
+and retry-advice outcomes are tagged `ModelStepResult` values. The router does
+not expose a live current target and cannot silently change the target pinned
+in the acknowledged request. Provider health and circuit state enter routing
+as explicit facts or diagnostics.
 
 Transient text, reasoning, and tool-input deltas are attempt-addressed and
 byte-offset. The terminal response contains the complete normalized output and
@@ -652,18 +1447,72 @@ Acquisition has separate owners:
 2. a provider returns a non-executable `SandboxCandidate` and raw observation;
 3. an independent verifier compares every requirement over an authenticated
    transport;
-4. the manager exposes `SandboxHandle<Config>` only after verification.
+4. the manager's acquisition operation returns `SandboxHandle<Config>` only
+   after verification.
+
+```ts
+export interface SandboxManager extends OwnedHandle<SandboxManagerCloseEvidence> {
+  acquire<Config extends SandboxConfig>(
+    requirement: SandboxRequirement<Config>,
+    grant: GrantRef<'sandbox-acquire'>,
+  ): Promise<LiveOperation<SandboxAcquisitionEvent, SandboxAcquisitionResult<Config>, SandboxAcquisitionCloseEvidence>>;
+}
+
+export type SandboxSnapshot<Config> = Readonly<{
+  sandboxId: SandboxId;
+  config: Config;
+  attestation: VerifiedAttestation<Config>;
+  lifecycle:
+    | Readonly<{ status: 'ready'; lease: SandboxLeaseView }>
+    | Readonly<{ status: 'reacquiring'; recovery: SandboxRecoveryState }>
+    | Readonly<{ status: 'unavailable'; failure: SandboxAvailabilityFailure }>
+    | Readonly<{ status: 'closing' }>
+    | Readonly<{ status: 'closed'; evidence: SandboxCloseEvidence }>;
+}>;
+
+export interface SandboxHandle<Config extends SandboxConfig>
+  extends
+    LiveState<SandboxSnapshot<Config>>,
+    AtomicLiveAttachmentSource<
+      SandboxSnapshot<Config>,
+      never,
+      never,
+      never,
+      Readonly<{ lifecycle: SandboxLifecycleEvent }>
+    >,
+    OwnedHandle<SandboxCloseEvidence> {
+  readonly lifecycleEvents: TransientEventStream<SandboxLifecycleEvent>;
+  execute(
+    request: SandboxExecutionRequest,
+    grant: GrantRef<'sandbox-execute'>,
+  ): Promise<LiveOperation<SandboxExecutionEvent, SandboxExecutionResult, SandboxExecutionCloseEvidence>>;
+}
+```
+
+Acquisition is a finite live operation because queueing, boot, transfer,
+verification, and abort can be material to the caller. The tagged result either
+contains the verified handle or exact failure and cleanup evidence. An adapter
+that acquires immediately returns an already-terminal operation. It does not
+introduce a second Promise-only contract.
 
 The verified value retains backend, VMM, accelerator, architecture, image,
 network, jailer, runner identity, config digest, and applicable passing
 conformance evidence. Runtime attestation records what Archer checked. It is
 not remote hardware attestation and cannot prove a compromised host truthful.
 
+`SandboxSnapshot` is operating state, not permission. A stale `ready` value
+cannot authorize execution. Every `execute` call still verifies the current
+grant, attestation applicability, target, lease, invocation identity, and
+contained paths at the action boundary. Lease expiry, backend death,
+reacquisition, parent close, and cleanup failure remain visible to direct
+consumers without polling.
+
 Each spawn verifies current invocation authority. Requests use argv arrays,
-contained guest paths, explicit environment names, deadlines, output limits,
-and an AbortSignal. Secret values are resolved for one invocation after
-authorization, injected at the execution edge, and revoked at settlement. A
-retained sandbox never receives a sandbox-wide secret environment.
+contained guest paths, explicit environment names, deadlines, and output
+limits. Secret values are resolved for one invocation after authorization,
+injected at the execution edge, and revoked at settlement. A retained sandbox
+never receives a sandbox-wide secret environment. The returned operation's
+`abort()` is the sole public termination request for that attempt.
 
 Sandbox execution returns a `LiveOperation`. Active abort waits for
 process-tree termination or produces cleanup evidence saying termination could
@@ -677,6 +1526,23 @@ acts. Scope includes the complete target needed by the action. Sandbox
 execution, for example, binds subject, Workspace, sandbox, invocation,
 resource revision, artifact tree, argv digest, allowed environment names, and
 time. A retained handle does not cache permission.
+
+```ts
+export interface AuthorityBroker extends OwnedHandle<AuthorityBrokerCloseEvidence> {
+  verify<Action extends ProtectedAction>(request: AuthorityCheck<Action>): Promise<AuthorityDecision<Action>>;
+}
+
+export interface AuthorityLedger extends AuthorityBroker {
+  grant(command: GrantCommand, authority: GrantRef<'authority-grant'>): Promise<GrantOutcome>;
+  revoke(command: RevokeCommand, authority: GrantRef<'authority-revoke'>): Promise<RevokeOutcome>;
+}
+```
+
+The broker uses its trusted clock and current revocation state for each check.
+A verification receipt proves that check at that action boundary. It is not a
+reusable capability or a live permission cache. An optional authority audit
+API may expose replayable ledger facts, but no subscriber or snapshot can
+implement `verify()`.
 
 Managed local setup may create a local authority ledger, Principal, and scoped
 grants because the caller explicitly selected that policy. `runTask` does not
@@ -726,6 +1592,28 @@ Named lifecycle phases are:
 - `before-ingest` and `after-ingest`;
 - `task-closing` and `runtime-closing`.
 
+```ts
+export interface LifecycleParticipant<Phase extends LifecyclePhase, Capability> {
+  readonly id: string;
+  readonly phase: Phase;
+  readonly priority: number;
+  readonly failurePolicy: 'fail-operation' | 'diagnostic-only';
+  run(
+    invocation: Readonly<{
+      occurrenceId: LifecycleOccurrenceId;
+      capability: Capability;
+      deadline: Timestamp;
+      signal: AbortSignal;
+    }>,
+  ): Promise<LifecycleParticipantResult>;
+}
+
+export type LifecycleParticipantResult =
+  | Readonly<{ kind: 'completed'; evidence?: JsonValue }>
+  | Readonly<{ kind: 'skipped'; reason: string }>
+  | Readonly<{ kind: 'failed'; failure: PublicError }>;
+```
+
 Participants have a stable ID, deterministic priority order, deadline, and
 either `fail-operation` or `diagnostic-only` failure policy. A decision
 participant cannot choose `diagnostic-only`. A participant receives only the
@@ -733,6 +1621,15 @@ Workspace, verified sandbox, physical view, check runner, diagnostic publisher,
 or close evidence appropriate to its phase. No phase grants a host shell,
 `sudo`, arbitrary mount, ambient environment, secret store, or promotion
 service.
+
+The runtime invokes one participant at most once for one
+`LifecycleOccurrenceId` and awaits exactly one tagged result before advancing
+that ordered phase. Timeout aborts the supplied signal and records a failed
+result under the declared policy. A participant that needs crash-safe external
+effects uses an acknowledged Cell effect and idempotency key; process-local
+at-most-once invocation does not pretend to provide exactly-once effects.
+Any result that arrives after timeout or phase settlement is diagnostic only
+and cannot alter the phase outcome.
 
 A one-file TypeScript extension remains possible. `defineExtension` can bundle
 related resource contributions, adapter factories, lifecycle participants, and
@@ -743,8 +1640,9 @@ not a universal runtime capability.
 
 Callbacks therefore have narrow homes:
 
-- `EventStream.subscribe` is the callback or async-iteration bridge for
-  observation;
+- `LiveState.subscribe` is the callback bridge for current state;
+- replayable and transient stream subscriptions own bounded async-iteration
+  delivery for ordered events;
 - `DiagnosticSink.write` is a best-effort transport callback;
 - lifecycle participants run only at named phases with declared policy;
 - provider, tool, approval, cancellation, and promotion behavior use typed
@@ -752,19 +1650,22 @@ Callbacks therefore have narrow homes:
 
 ## Managed composition and ergonomics
 
-The managed layer offers three progressively deeper surfaces.
+The managed layer offers three progressively deeper assembly paths. Every path
+starts the same hot `TaskRun` and uses the same durable contracts.
 
-### One call
+### One construction call
 
-The shortest path owns construction, one task attachment, and cleanup:
+The shortest path owns construction, one task attachment, first-party logging,
+and cleanup. The Promise covers construction and durable task creation. It does
+not cover task execution:
 
 ```ts
 import { runTask } from '@archer/agent';
-import { localCoding } from '@archer/preset-local';
-import { openAI } from '@archer/model-ai-sdk';
-import { dockerDevelopment } from '@archer/sandbox-docker';
+import { openAI } from '@archer/models/ai-sdk';
+import { localCoding } from '@archer/presets';
+import { dockerDevelopment } from '@archer/sandbox/docker';
 
-const result = await runTask({
+await using run = await runTask({
   task: 'Fix the failing tests',
   workspace: '.',
   using: localCoding({
@@ -776,14 +1677,27 @@ const result = await runTask({
   }),
 });
 
-if (result.status === 'completed') {
-  console.log(result.changeSet?.digest ?? 'no changes');
-}
+const unsubscribe = run.subscribe(render);
+render(run.getSnapshot());
 
-if (result.status === 'paused') {
-  console.log(result.approvals, result.resume);
+await using presentation = run.presentationEvents.subscribe();
+void renderPresentation(presentation);
+
+const settlement = await run.settled;
+unsubscribe();
+
+if (settlement.kind === 'outcome') {
+  renderOutcome(settlement.outcome);
 }
 ```
+
+`run` is live before the first subscriber and remains live after the last one
+leaves. `getSnapshot()` gives a late consumer the current immutable state.
+`subscribe()` reports subsequent state. `run.durableEvents` carries replayable
+task, Thread, and Item facts. `run.presentationEvents` carries transient model,
+tool, and execution updates with exact gaps. `run.diagnostics` carries
+structured operating records on another transient stream. No single overflow
+option pretends those planes have the same retention guarantee.
 
 The explicit `dockerDevelopment` discriminator states the shared-kernel claim.
 A supported caller may select `qemuHvf` instead. Trusted process execution is
@@ -797,32 +1711,128 @@ compiles a ResourceSet. Each task runs against that compiled profile.
 Credential values remain inside the provider adapter.
 
 The input directory is imported into an immutable tree and private Workspace.
-It is not bound as the canonical writable directory. A successful result may
+It is not bound as the canonical writable directory. A completed outcome may
 contain a private ChangeSet but never promotes it.
 
-### Retained tasks
+### The TaskRun contract
 
-Applications that need live UI, human approval, or repeated work retain an
-Archer instance and a `TaskRun`:
+`TaskRun` is not an advanced UI option. It is the managed task contract:
 
 ```ts
-export interface TaskRun extends OwnedHandle<TaskRunCloseEvidence> {
+export type TaskRunSnapshot = Readonly<
+  TaskRunIdentity &
+    Readonly<{ revision: TaskRevision }> &
+    TaskRunProgress &
+    (
+      | { status: 'starting' }
+      | { status: 'running'; activity: TaskActivity }
+      | { status: 'awaiting-approval'; approvals: readonly [ApprovalRequest, ...ApprovalRequest[]] }
+      | { status: 'recovering'; recovery: TaskRecoveryState }
+      | { status: 'cancelling'; reason: string }
+      | { status: 'completed'; outcome: CompletedTaskOutcome }
+      | { status: 'failed'; outcome: FailedTaskOutcome }
+      | { status: 'cancelled'; outcome: CancelledTaskOutcome }
+    )
+>;
+
+export type TaskRunSettlement =
+  Readonly<{ kind: 'outcome'; outcome: TaskOutcome }> | Readonly<{ kind: 'detached'; evidence: TaskRunCloseEvidence }>;
+
+export type ApprovalDecisionCommand = Readonly<{
+  approvalId: ApprovalId;
+  expectedRevision: ApprovalRevision;
+  decision: ApprovalDecision;
+  idempotencyKey: IdempotencyKey;
+}>;
+
+export type TaskCancellationCommand = Readonly<{
+  taskId: TaskId;
+  expectedRevision: TaskRevision;
+  reason: string;
+  idempotencyKey: IdempotencyKey;
+}>;
+
+export type TurnCancellationCommand = Readonly<{
+  turnId: TurnId;
+  expectedRevision: ThreadRevision;
+  reason: string;
+  idempotencyKey: IdempotencyKey;
+}>;
+
+export interface TaskRun
+  extends
+    LiveState<TaskRunSnapshot>,
+    AtomicLiveAttachmentSource<
+      TaskRunSnapshot,
+      'task',
+      TaskCursor,
+      DurableTaskEvent,
+      Readonly<{
+        presentation: TaskPresentationEvent;
+        diagnostics: DiagnosticRecord;
+      }>
+    >,
+    OwnedHandle<TaskRunCloseEvidence> {
   readonly taskId: TaskId;
   readonly threadId: ThreadId;
-  readonly events: EventStream<TaskObservation>;
-  readonly approvals: EventStream<ApprovalRequest>;
-  readonly result: Promise<TaskResult>;
+  readonly attachmentKind: 'scoped-runtime' | 'retained-runtime';
+  readonly durableEvents: ReplayableEventStream<DurableTaskEvent, TaskCursor>;
+  readonly presentationEvents: TransientEventStream<TaskPresentationEvent>;
+  readonly diagnostics: TransientEventStream<DiagnosticRecord>;
+  readonly settled: Promise<TaskRunSettlement>;
 
-  decideApproval(decision: ApprovalDecision, grant: GrantRef<'tool-approval'>): Promise<ApprovalReceipt>;
+  decideApproval(command: ApprovalDecisionCommand, grant: GrantRef<'tool-approval'>): Promise<ApprovalReceipt>;
 
-  cancel(reason: string, grant: GrantRef<'turn-cancel'>): Promise<TurnOutcome>;
+  cancel(command: TaskCancellationCommand, grant: GrantRef<'task-cancel'>): Promise<CancellationReceipt>;
 }
 ```
 
-`Archer.startTask()` returns this handle. Closing it detaches the application
-and returns recovery evidence. It does not cancel acknowledged work.
-`Archer.runTask()` uses the same method, waits while its configured policy can
-make progress, and closes the attachment before returning.
+The snapshot is a projection, not another authority. Durable fields come from
+acknowledged Thread and Cell state. Attempt-addressed activity can be transient
+and declares gaps. One source transition computes one immutable snapshot and
+multicasts it to all subscribers. A terminal snapshot is retained, and
+an outcome settlement contains the exact terminal value embedded in that
+snapshot. Subscriber count never starts, repeats, pauses, or cancels task work.
+
+`settled` belongs to the attachment. It resolves to `outcome` if the task
+reaches a terminal state first and to `detached` if the handle closes first.
+It never remains pending merely because a closed attachment no longer watches
+the durable task. An application that wants a later outcome reattaches by
+`taskId`. Turn start, approval, and cancellation commands bind the exact
+visible revision and an idempotency key. A stale precondition returns a refusal
+without changing durable state; replaying the same key returns the same
+receipt. `cancel()` returns after the durable cancellation command is
+acknowledged. The hot snapshot shows `cancelling`, and a later settlement shows
+the terminal outcome.
+
+A pure projection reducer derives the next snapshot from the previous snapshot
+and an accepted durable or live event. The RxJS shell owns scheduling,
+subscription, cancellation, and sharing around that reducer. Diagnostics and
+listener callbacks stay outside it. After construction, expected provider,
+tool, policy, budget, and recovery failures become snapshot state and tagged
+outcomes rather than rejected settlement Promises.
+
+Applications that run repeated work retain an Archer instance:
+
+```ts
+await using archer = await createArcher({ using: localCoding(options) });
+await using first = await archer.runTask(firstInput);
+await using second = await archer.runTask(secondInput);
+
+const restored = await archer.tasks.attach(taskId);
+```
+
+The top-level `runTask()` creates a scoped Archer runtime and transfers its
+owned dependencies into the returned run's close sequence. `Archer.runTask()`
+uses already retained services. `Archer.tasks.attach()` reconstructs the same
+snapshot from durable state and reconnects to current live observations when
+available.
+
+Closing a `TaskRun` detaches the application and returns recovery evidence. It
+does not record durable cancellation. For the scoped one-task helper, close
+also quiesces and closes the runtime components that helper created. A task
+that already reached acknowledgement remains recoverable. `cancel()` is the
+separate authorized command that changes durable task state.
 
 Approval has two parts. An `ApprovalPolicy` evaluates a pinned call and returns
 `approve`, `deny`, or `needs-human`. That recommendation is not permission.
@@ -832,21 +1842,32 @@ decision as a durable Item before an invocation effect exists.
 The standard local policy automatically approves only admitted first-party
 operations confined to the private Workspace, without network, secret, host
 access, or a new capability. It can deny a prohibited action. If it returns
-`needs-human`, one-call `runTask()` returns `status: "paused"` with durable
-approval requests, the last acknowledgement, private Workspace snapshot, and a
-resume locator. It does not wait forever on an in-process callback.
+`needs-human`, the TaskRun enters `awaiting-approval`. Its snapshot contains
+the durable requests, last acknowledgement, private Workspace snapshot, and
+recovery locator. `settled` remains pending while this attachment stays open
+because the task has not finished. Closing and later attaching does not lose
+the decision point.
 
-CLI, HTTP, or application responders use retained `TaskRun` commands. A UI
-callback may gather a human answer, but its return value alone is not
-authority. Disconnect, timeout, and cancellation remain explicit outcomes.
+CLI, HTTP, or application responders use `TaskRun` commands. A UI callback may
+gather a human answer, but its return value alone is not authority. Disconnect,
+timeout, detachment, cancellation, and a terminal outcome remain different
+facts.
 
 ### Direct composition
 
 Infrastructure applications can assemble the same pieces directly:
 
 ```ts
-import { borrowed, owned } from '@archer/core';
 import { composeArcher } from '@archer/agent';
+import { borrowed, diagnosticHub, owned } from '@archer/core';
+import { bucketSqliteCells } from '@archer/core/cells/bucket-sqlite';
+import { fileTreeStore } from '@archer/files/fs';
+import { gitWorkspaces } from '@archer/files/git';
+import { pinoSink } from '@archer/observability/pino';
+
+const diagnostics = await diagnosticHub({
+  sinks: [owned(await pinoSink({ level: 'info' }))],
+});
 
 await using archer = await composeArcher({
   cells: owned(await bucketSqliteCells(cellOptions)),
@@ -857,7 +1878,7 @@ await using archer = await composeArcher({
   resources: borrowed(resourceControl),
   authority: borrowed(authorityBroker),
   sandboxes: borrowed(sandboxManager),
-  diagnostics: owned(await diagnosticHub(diagnosticOptions)),
+  diagnostics: owned(diagnostics),
 });
 
 await using workspace = await archer.workspaces.openPrivate({
@@ -866,30 +1887,52 @@ await using workspace = await archer.workspaces.openPrivate({
   grant: workspaceReadGrant,
 });
 
+const compilation = await resourceControl.compile({ profileId }, resourceReadGrant);
+
 await using thread = await archer.threads.create(
   {
     threadId,
     workspaceId: workspace.workspaceId,
     subject,
-    resourceSet: await resources.compile(profileId, resourceReadGrant),
+    resourceSet: compilation.resourceSet,
   },
   threadCreateGrant,
 );
 
-const receipt = await thread.startTurn(turnInput, turnStartGrant);
-await using events = thread.events.subscribe({
+const stop = thread.subscribe(renderThread);
+renderThread(thread.getSnapshot());
+
+const receipt = await thread.startTurn(
+  {
+    input: turnInput,
+    expectedRevision: thread.getSnapshot().revision,
+    idempotencyKey: turnIdempotencyKey,
+  },
+  turnStartGrant,
+);
+await using items = thread.durableEvents.subscribe({
   after: receipt.cursor,
   capacityItems: 128,
   capacityBytes: 1_048_576,
-  overflow: 'resume',
+  overflow: 'resume-required',
 });
+void renderItems(items);
 
-for await (const event of events) render(event);
+const turn = await thread.waitForTurn(receipt.turnId);
+stop();
 ```
+
+The direct path does not teach callers to fold a Thread-long event stream to
+discover current status or Turn completion. The hot snapshot handles current
+state, `waitForTurn()` handles one accepted Turn's attachment settlement, and
+the replayable stream exists for consumers that need every ordered Item. These
+are three facets of one Thread graph.
 
 Direct users can also use Cells for a non-agent Program, immutable files
 without a sandbox, a sandbox without a model, or Workspace promotion without
-installing the managed package.
+installing the managed package. Contract objects accepted by `composeArcher`
+are the same objects returned by first-party subpath factories. There is no
+adapter registry available only to presets.
 
 ### Standard coding defaults
 
@@ -909,16 +1952,22 @@ prompt text hidden in the runner. It provides:
 - durable context compaction at a configured fraction of usable context with a
   pinned summarizer revision;
 - visible retry attempts with provider SDK retries disabled;
+- a bounded diagnostic hub and redacted Pino logger at `info` level on an
+  asynchronous stderr destination, with explicit configuration to change the
+  level, attach sinks, replace Pino, or disable log output while retaining
+  TaskRun diagnostics;
 - private Workspace ingestion and cleanup, with no promotion.
 
 The model and exact sandbox remain required configuration. A universal default
 for either would be dishonest. Everything else is a named, inspectable value or
 factory that an application can replace individually.
 
-Ergonomics should be excellent for one task, repeated managed tasks, and normal
-retained Threads. Direct sandbox verification, resource admission, custom
-authority, promotion, and adapter construction remain deliberately explicit
-because those paths configure guarantees rather than ordinary task input.
+One task and repeated managed tasks have the same reactive shape. Optimization
+does not require dropping to another API. An application can change a prompt,
+logger, queue policy, model router, file store, or sandbox while retaining
+`TaskRun`. Direct sandbox verification, resource admission, custom authority,
+promotion, and adapter construction stay explicit because those paths choose
+guarantees rather than ordinary task input.
 
 ## Lifecycle and ownership
 
@@ -926,34 +1975,69 @@ Every retained owner follows:
 
 ```ts
 export interface OwnedHandle<Evidence> extends AsyncDisposable {
+  readonly closed: Promise<Evidence>;
   close(): Promise<Evidence>;
 }
 
 export type ComponentRef<T> =
-  Readonly<{ ownership: 'borrowed'; value: T }> | Readonly<{ ownership: 'owned'; value: T }>;
+  Readonly<{ ownership: 'borrowed'; value: T }> | Readonly<{ ownership: 'owned'; value: T & OwnedHandle<unknown> }>;
 ```
 
-`close()` is idempotent. Concurrent calls share one close operation. Repeated
-calls return the same terminal facts with `alreadyClosed: true` where relevant.
-`Symbol.asyncDispose` delegates to `close()`.
+`close()` is idempotent. Concurrent and repeated calls share one close
+operation. `close()` and `closed` settle with the same immutable evidence and
+do not rewrite it with an `alreadyClosed` flag. `Symbol.asyncDispose` delegates
+to `close()`. A parent owner or lost lease may settle `closed` without the
+current caller invoking `close()`.
+
+For a live state handle, the implementation stops future callbacks before
+`closed` settles and retains its final snapshot. Its event sources stop
+accepting values before the owning handle settles. Existing event subscriptions
+drain, gap, resume, or detach under their own queue policy. No handle close
+waits for an arbitrarily slow subscriber.
 
 Factories never infer dependency ownership from the presence of a `close`
 method. `composeArcher` requires `owned()` or `borrowed()` around every Cell
 host, router, store, manager, broker, and diagnostic hub. Presets own the
 components they create. Archer never closes a borrowed dependency.
 
+`Archer` itself is an owned composition boundary, not an aggregate live-state
+cache:
+
+```ts
+export interface Archer extends OwnedHandle<ArcherCloseEvidence> {
+  readonly diagnostics: TransientEventStream<DiagnosticRecord>;
+  readonly tasks: TaskDirectory;
+  readonly threads: ThreadDirectory;
+  readonly workspaces: WorkspaceDirectory;
+  readonly scratchpads: ScratchpadDirectory;
+  readonly sandboxes: SandboxDirectory;
+  runTask(input: TaskInput): Promise<TaskRun>;
+}
+```
+
+Construction resolves only after Archer enters `ready`. The first close call
+atomically moves its process-local admission state to `closing` before awaiting
+children. New starts and attachments then fail with the stable
+`archer_closing` construction failure. Existing operations follow the cleanup
+order below. The state becomes `closed` only after every owned close phase has
+settled. Child handles expose the live state applications need, while Archer's
+`closed` and diagnostics expose its own lifecycle without duplicating child
+snapshots.
+
 The ownership ladder is:
 
 | Owner              | Owns                                                 | Does not imply                              |
 | ------------------ | ---------------------------------------------------- | ------------------------------------------- |
 | Event subscription | One bounded queue and attachment                     | Cancellation of its source                  |
-| Live operation     | One provider or sandbox attempt                      | Acceptance of its result into durable state |
+| Atomic attachment  | One state slot and a coordinated set of queues       | A reducer, source close, or cancellation    |
+| Live operation     | One finite admitted attempt                          | Acceptance of its result into durable state |
 | TaskRun            | Application attachment and operation-scoped children | Authority or automatic cancellation         |
 | Thread handle      | Client attachment to a durable Thread                | Ownership of the durable Thread record      |
 | Cell handle        | Current activation lease                             | Permanent ownership of Cell state           |
 | MaterializedView   | One physical view and ingestion recovery data        | Workspace lineage or publication            |
 | Sandbox handle     | Processes, runtime lease, and teardown               | Execution authority or file ownership       |
 | Workspace handle   | Private lineage and snapshots                        | Canonical promotion                         |
+| Scratchpad handle  | Private task or Thread working state                 | Workspace inclusion or promotion            |
 | Archer             | Components explicitly marked owned                   | Application-supplied borrowed services      |
 
 Managed cleanup proceeds from child work to parent services:
@@ -979,17 +2063,22 @@ Close, detach, live abort, and durable cancel remain distinct. No
 
 ## Observability
 
-Archer has three observable planes with different authority:
+Archer has four observable planes with different authority:
 
-1. **Durable observations** expose acknowledged Thread and Cell facts by
-   cursor. They are replayable and may support audit.
-2. **Presentation events** expose attempt-addressed model and execution deltas,
-   approval notices, and explicit gaps. They improve interaction but are not
-   transcript truth.
-3. **Diagnostics** explain operation, performance, lifecycle, and adapter
+1. **Live state** exposes bounded immutable snapshots for TaskRun, Thread,
+   Cell, Workspace, Scratchpad, and sandbox owners. It is the application-facing
+   projection for current status, activity, usage, lineage, approval, recovery,
+   lease, and terminal state.
+2. **Durable observations** expose acknowledged task, Thread, Cell, Workspace,
+   Scratchpad checkpoint, and resource lifecycle facts by branded cursor. They
+   are replayable and may support audit.
+3. **Presentation events** expose attempt-addressed model, tool, acquisition,
+   file-operation, and execution updates with explicit gaps. They improve
+   interaction but are not transcript, file, authority, or retry truth.
+4. **Diagnostics** explain operation, performance, lifecycle, and adapter
    failure. They are bounded, redacted, and non-authoritative.
 
-`@archer/diagnostics` defines a versioned product-neutral record:
+`@archer/core/diagnostics` defines a versioned product-neutral record:
 
 ```ts
 export type DiagnosticRecord = Readonly<{
@@ -1006,14 +2095,23 @@ export type DiagnosticRecord = Readonly<{
   error?: PublicError;
 }>;
 
-export interface DiagnosticSink extends AsyncDisposable {
+export interface DiagnosticSink extends OwnedHandle<DiagnosticSinkCloseEvidence> {
   write(records: readonly DiagnosticRecord[]): Promise<void>;
   flush(): Promise<void>;
 }
 
-export interface Diagnostics {
-  readonly events: EventStream<DiagnosticRecord | DiagnosticGap>;
-  attach(sink: ComponentRef<DiagnosticSink>, options?: DiagnosticFilter): OwnedHandle<DiagnosticSinkCloseEvidence>;
+export type DiagnosticAttachOptions = Readonly<{
+  filter?: DiagnosticFilter;
+  delivery?: DeliveryBounds;
+  onWriteFailure?: 'detach' | 'continue';
+}>;
+
+export interface Diagnostics extends OwnedHandle<DiagnosticsCloseEvidence> {
+  readonly events: TransientEventStream<DiagnosticRecord>;
+  attach(
+    sink: ComponentRef<DiagnosticSink>,
+    options?: DiagnosticAttachOptions,
+  ): OwnedHandle<DiagnosticAttachmentCloseEvidence>;
 }
 ```
 
@@ -1025,17 +2123,40 @@ default. Adapter errors become bounded, redacted public error data before they
 enter the diagnostic queue.
 
 Runtime packages enqueue records into a bounded dispatcher. Domain work never
-awaits a diagnostic sink. Slow or failing sinks are isolated. Overflow counts
-drops by component and severity and later emits one `diagnostics.gap` record.
-A sink failure is reported to other healthy sinks and close evidence without
-recursively writing through the failed sink. It cannot change acknowledgement,
-retry, cancellation, budget, task status, checks, or promotion.
+awaits a diagnostic sink. Each sink attachment owns an independent bounded
+queue. The hub serializes `write()` calls for one sink and preserves the order
+of records that queue accepts. It never retries a write implicitly. A rejected
+write follows the attachment's explicit failure policy, which defaults to
+`detach`.
+
+Overflow counts drops by component and severity and later emits one
+`diagnostics.gap` record. A sink failure is reported to other healthy sinks and
+close evidence without recursively writing through the failed sink. `flush()`
+waits only for records already accepted by that sink, observes the shutdown
+deadline, and settles before its attachment closes. None of these outcomes can
+change acknowledgement, retry, cancellation, budget, task status, checks, or
+promotion.
+
+Every managed TaskRun exposes a correlation-filtered view of that dispatcher
+through `run.diagnostics`. The run snapshot derives operating status from the
+task runtime and durable records, not from log output. Low-level applications
+may retain the full `Diagnostics` handle and attach any number of sinks.
+Pure Programs do not emit diagnostics. The effect shell records their
+acknowledgement, activation, attempt, settlement, and recovery phases.
 
 ### Logs
 
-Pino is the first-party Node logging adapter. `@archer/diagnostics-pino` maps
-normalized records to structured JSON, child correlation bindings, and
-redaction. Pino-specific transports and formatters remain in that package.
+Pino is Archer's first-party Node logger, not a third-party example left to the
+application. `@archer/observability/pino` maps normalized records to structured
+JSON, child correlation bindings, filters, and redaction. The managed local
+preset attaches it at `info` level to an asynchronous stderr destination. An
+application can configure the level and destination, supply a Pino instance,
+attach additional sinks, replace the logger, or explicitly disable log output.
+Disabling output does not disable diagnostic production or
+`TaskRun.diagnostics`.
+
+Pino-specific transports and formatters remain behind that subpath. Pino's own
+types do not enter `TaskRun`, `Diagnostics`, or another contract declaration.
 Pino's own documentation recommends moving log transformation and transmission
 to a worker thread or separate process, which matches Archer's isolated sink
 model: [Pino transports](https://github.com/pinojs/pino/blob/main/docs/transports.md).
@@ -1046,7 +2167,7 @@ projection of diagnostics, not the source of diagnostic or durable meaning.
 
 ### Metrics and traces
 
-`@archer/telemetry-opentelemetry` translates named lifecycle and diagnostic
+`@archer/observability/opentelemetry` translates named lifecycle and diagnostic
 events into metrics and spans. It never exports OpenTelemetry SDK types through
 an Archer contract. The JavaScript implementation currently treats traces and
 metrics as stable while its log signal remains less mature, which reinforces
@@ -1075,92 +2196,102 @@ new core interfaces.
 
 ### Transports and subscriptions
 
-In-process handles are canonical. CLI, HTTP/SSE, and future ACP adapters decode
-public values, authenticate a Principal, obtain or forward grant references,
-call handle methods, and encode streams and results. They do not implement
-another agent loop.
+In-process handles are canonical. CLI, HTTP/SSE, WebSocket, stdio, and future
+ACP adapters decode public values, authenticate a Principal, obtain or forward
+grant references, call handle methods, and project the same state, stream,
+operation, settlement, and close contracts. They do not implement another agent
+loop, reducer, retry policy, or polling cache.
 
-Durable SSE streams accept a cursor and terminate a slow client with a resume
-cursor. Transient streams report gaps. Connection loss detaches observation and
-does not cancel a Turn. Cancellation requires an authenticated command.
+A remote adapter calls the handle's public `attachLive()` bridge. The returned
+`AtomicLiveAttachment` already owns every requested queue and carries the one
+`LiveStateSeed` captured from that attachment point. A client installs
+`seed.state`, discards any later update at or below its `StateVersion` within
+the same state source and epoch, consumes the attachment's durable subscription
+from its requested cursor, and re-seeds on a changed state epoch. A changed
+presentation, lifecycle, or diagnostic epoch is an explicit gap. Owners without
+a durable event source expose `durable: undefined`.
+Expired or invalid cursors produce a typed re-seed requirement. They never
+silently fall back to polling or an incomplete local fold.
 
-Diagnostic subscribers use the same public EventStream boundary. Extension
-sinks attach through `Diagnostics.attach`. Transport teardown and diagnostic
+SSE uses separate state, replayable, transient, and diagnostic event names or
+routes so browser reconnection cannot merge different delivery guarantees.
+WebSocket and stdio use the same versioned frame union over a duplex channel.
+Commands and operation aborts carry idempotency keys and return the same tagged
+receipts as their in-process methods. Connection loss closes only the remote
+attachment and its subscriptions. It does not cancel a Turn or finite attempt;
+cancellation and abort remain explicit authenticated commands.
+
+Diagnostic subscribers use `TransientEventStream`. Extension sinks attach
+through `Diagnostics.attach`. Every remote subscriber has its own bounded
+queue, delivery policy, and close frame. Transport teardown and diagnostic
 flush follow explicit owned or borrowed lifecycle rules.
 
 ## Package map
 
-The contract graph points inward. Common resource references live in `core` so
-model requests can identify offered tool revisions without importing the
-resource control plane.
+The contract graph still points inward, but source modules and npm packages are
+different decisions. V1 publishes capability families rather than one package
+per interface or first-party adapter:
 
-| Package                | Public responsibility                                                                                                              | Intentional dependencies                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `@archer/core`         | JSON values, IDs, digests, codecs, `Program`, effect intents, tagged failures, `OwnedHandle`, `ComponentRef`, common resource refs | Standard JavaScript only                                                         |
-| `@archer/stream`       | `EventStream`, subscriptions, bounded delivery, gaps, `LiveOperation`, and conformance helpers                                     | `core`                                                                           |
-| `@archer/diagnostics`  | Diagnostic schema, correlation, filters, hub, sink, redaction, and subscriptions                                                   | `core`, `stream`                                                                 |
-| `@archer/authority`    | Principals, action-correlated grant references, generic scope values, verification decisions, and broker                           | `core`                                                                           |
-| `@archer/files`        | Logical paths, blobs, immutable trees, stores, canonical codecs                                                                    | `core`                                                                           |
-| `@archer/materializer` | Mount plans, physical views, quiescence, ingestion receipts, and recovery evidence                                                 | `core`, `files`, `authority`                                                     |
-| `@archer/workspace`    | Private Workspace and Scratchpad lineage, edits, snapshots, ChangeSets, reviews, checks, and promotion ports                       | `core`, `files`, `materializer`, `authority`                                     |
-| `@archer/cells`        | Acknowledgements, attempts, fences, wakes, lifecycle Program, Cell host and handle                                                 | `core`, `stream`                                                                 |
-| `@archer/model`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                 | `core`, `stream`                                                                 |
-| `@archer/resources`    | Drafts, revisions, build evidence, review, admission, profiles, ResourceSets, activation, revocation, and secret bindings          | `core`, `files`, `model`, `authority`                                            |
-| `@archer/prompts`      | Finite prompt contributions, compiler, context policy, and default prompt sources                                                  | `core`, `files`, `resources`                                                     |
-| `@archer/sandbox`      | Exact requirements, candidates, verifier, acquisition, execution, leases, and close evidence                                       | `core`, `stream`, `materializer`, `authority`                                    |
-| `@archer/tools`        | Raw-call binding, approval, invocation identity, secret leasing, execution, and outcomes                                           | `core`, `model`, `resources`, `sandbox`, `workspace`, `authority`                |
-| `@archer/thread`       | Thread, Turn, Item, transcript, coding Program, repair, compaction, budgets, and retained handle                                   | `core`, `stream`, `cells`, `model`, `resources`, `prompts`, `tools`, `authority` |
-| `@archer/agent`        | `runTask`, `createArcher`, `composeArcher`, TaskRun, managed coordination, lifecycle, and policy composition                       | Contract packages above                                                          |
-| `@archer/conformance`  | Versioned required cases, fault models, reports, and passing evidence                                                              | Contract packages only                                                           |
-| `@archer/testing`      | Deterministic clocks, stores, adapters, schedules, and scenario fixtures                                                           | Contract packages only                                                           |
+| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                      | Intentional package dependencies                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/diagnostics` | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
+| `@archer/files`         | Logical paths, immutable trees, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts                                       | `/fs`, `/s3`, `/git`, `/materializer/directory`, `/materializer/docker`, `/materializer/qemu`                             | `core`; adapter-specific optional peers                                                                 |
+| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                 | `core`; AI SDK bundled for the supported first-party adapter                                            |
+| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                      | `core`, `files`, `models`                                                                               |
+| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                        | `core`, `files`; backend-specific optional peers                                                        |
+| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                       | `core`, `files`, `models`, `resources`, `sandbox`                                                       |
+| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                  | Selected capability and observability packages                                                          |
+| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                 | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                             |
+| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                   | `core`, `agent`                                                                                         |
+| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                              | Protocol packages under test                                                                            |
+| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                   | `agent`, `presets`, `transports`, `observability`                                                       |
 
-Contract packages may depend on `diagnostics` in implementation modules without
-making a diagnostic sink a constructor requirement for pure values. Diagnostic
-emission remains an injected, non-blocking runtime concern.
+Each root exports the capability contract and common factories. A subpath
+exports one implementation and its exact configuration. Protocol conformance
+ships beside the protocol, such as `@archer/sandbox/conformance`; the testing
+package supplies shared runners and deterministic support. A third-party
+adapter may publish under any name and implement the same root contract.
 
-First-party implementation and adapter packages are independently installable:
+Package roots are side-effect-free and tree-shakable. No root barrel imports an
+adapter merely to register it. A dependency used by the documented first-party
+path, such as AI SDK or Pino, ships with its capability package. Large or
+platform-specific integrations, such as an S3 client or OpenTelemetry SDK, may
+be optional peers. Every adapter-only dependency loads inside the selected
+factory. A named preset depends directly on the adapters it selects so its
+documented default works after one install. Missing optional peers fail during
+adapter construction with the exact package and supported version, not later
+during a task.
 
-- `@archer/cells-embedded-sqlite`;
-- `@archer/cells-bucket-sqlite`;
-- `@archer/object-store-s3`;
-- `@archer/files-fs`;
-- `@archer/materializer-directory`;
-- `@archer/materializer-docker`;
-- `@archer/materializer-qemu`;
-- `@archer/workspace-git`;
-- `@archer/model-ai-sdk`;
-- `@archer/sandbox-process`;
-- `@archer/sandbox-docker`;
-- `@archer/sandbox-qemu-hvf`;
-- `@archer/diagnostics-pino`;
-- `@archer/telemetry-opentelemetry`;
-- `@archer/transport-http`;
-- `@archer/cli`;
-- `@archer/preset-local`.
+This keeps optimization local. An application can begin with
+`@archer/presets` and later import `@archer/models`, `@archer/sandbox`, or
+`@archer/files` to replace one choice. It does not need to migrate from a toy
+facade to a different runtime, coordinate dozens of first-party versions, or
+guess which package owns a Docker or AI SDK adapter.
 
-There is no aggregate export that installs every adapter. The local preset
-selects embedded state, local tree storage, Git Workspace support, managed
-diagnostics, default coding Resources, and lifecycle policy. It still requires
-the caller to supply a model and exact sandbox choice.
+All first-party `@archer` packages use one v1 version and release train.
+Capability packages can still be installed independently, but an application
+does not solve an internal compatibility matrix. Third-party adapters version
+independently against the protocol and conformance version they implement.
 
 ## Technology choices
 
-| Concern                        | V1 choice                                                                                                   |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
-| Runtime                        | Node 26, ESM, TypeScript 5.9, pnpm 11                                                                       |
-| Internal reactive work         | RxJS 7.8 in implementation modules only                                                                     |
-| Public temporal API            | Archer-owned bounded streams and live-operation handles                                                     |
-| Provider integration           | AI SDK at the adapter edge, SDK retries disabled                                                            |
-| Tool schemas                   | JSON Schema 2020-12, including boolean schemas, with Ajv 8 behind validation ports                          |
-| Embedded durability            | `node:sqlite`, with no ORM in the journal or outbox path                                                    |
-| Distributed reference host     | SQLite snapshots plus conditional object-store operations and a mandatory live semantics probe              |
-| S3-compatible storage          | AWS SDK v3 inside the S3 adapter                                                                            |
-| File identity                  | SHA-256 blobs and a versioned canonical tree encoding                                                       |
-| Workspace source and promotion | Git CLI inside the Git adapter; no Git value in ChangeSet contracts                                         |
-| Sandbox control                | Existing `sandboxd` and QEMU runner mechanisms behind rebuilt exact contracts; Docker CLI for development   |
-| Structured logging             | Pino adapter over Archer diagnostics                                                                        |
-| Metrics and traces             | OpenTelemetry adapter over named Archer signals                                                             |
-| Test harness                   | TypeScript negative type cases, deterministic unit scenarios, fault injection, and live adapter conformance |
+| Concern                        | V1 choice                                                                                                        |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Runtime                        | Node 26, ESM, TypeScript 5.9, pnpm 11                                                                            |
+| Internal reactive work         | RxJS 7.8 hot graphs in runtime implementation modules; no RxJS declaration exports                               |
+| Public temporal API            | `LiveState`, `AtomicLiveAttachment`, replayable and transient streams, and `LiveOperation`; no RxJS declarations |
+| React binding                  | `useSyncExternalStore` over generic `LiveState`; React remains an optional peer                                  |
+| Provider integration           | AI SDK at the adapter edge, SDK retries disabled                                                                 |
+| Tool schemas                   | JSON Schema 2020-12, including boolean schemas, with Ajv 8 behind validation ports                               |
+| Embedded durability            | `node:sqlite`, with no ORM in the journal or outbox path                                                         |
+| Distributed reference host     | SQLite snapshots plus conditional object-store operations and a mandatory live semantics probe                   |
+| S3-compatible storage          | AWS SDK v3 inside the S3 adapter                                                                                 |
+| File identity                  | SHA-256 blobs and a versioned canonical tree encoding                                                            |
+| Workspace source and promotion | Git CLI inside the Git adapter; no Git value in ChangeSet contracts                                              |
+| Sandbox control                | Existing `sandboxd` and QEMU runner mechanisms behind rebuilt exact contracts; Docker CLI for development        |
+| Structured logging             | Pino over Archer diagnostics, included by default in managed presets                                             |
+| Metrics and traces             | OpenTelemetry adapter over named Archer signals                                                                  |
+| Test harness                   | TypeScript negative type cases, deterministic unit scenarios, fault injection, and live adapter conformance      |
 
 Archer does not add Effect, another actor runtime, or a workflow framework on
 top of its Program and RxJS split. Zod does not become the public tool schema
@@ -1180,7 +2311,14 @@ TypeScript should reject useful local category errors:
 - a Firecracker observation used for a QEMU requirement;
 - a Workspace used as a promotion service;
 - a failed check or stale ChangeSet used as passing promotion evidence;
-- an owned dependency confused with a borrowed one.
+- an awaiting-approval snapshot used as a terminal TaskOutcome;
+- a provider-specific option supplied to the wrong model adapter subpath;
+- an owned dependency confused with a borrowed one;
+- a cursor category, such as Workspace, supplied to an incompatible replayable
+  source category, such as Thread;
+- replay options supplied to a transient stream or gap options supplied to a
+  replayable stream;
+- a checkpoint command called on an ephemeral Scratchpad handle.
 
 TypeScript cannot prove a fact obtained from storage, a network, disk, process,
 or hostile adapter. Runtime codecs, verifiers, Programs, and services validate:
@@ -1193,6 +2331,8 @@ or hostile adapter. Runtime codecs, verifiers, Programs, and services validate:
   revocation at action time;
 - provider correlation, monotonic offsets, cancellation, one result, and no
   hidden retry;
+- remote attachment seed versions, cursor source and retention, presentation
+  epochs, and transport frame ordering;
 - runner identity, authenticated transport, exact sandbox observation, image,
   mounts, network policy, process-tree termination, lease, and ingestion;
 - review independence, check identity, candidate composition, and canonical
@@ -1201,18 +2341,32 @@ or hostile adapter. Runtime codecs, verifiers, Programs, and services validate:
 Each replaceable boundary publishes a versioned conformance suite. The initial
 suites cover:
 
-- Cell acknowledgement, ownership races, fencing, redrive, wakes, cancellation,
-  ambiguous publication, and late completion;
+- CellHost revision binding, create idempotency, attach, restore refusal, and
+  unavailability; Cell acknowledgement, ownership races, fencing, redrive,
+  wakes, cancellation, ambiguous publication, and late completion;
 - object-store conditional create and update, immutable reads, retired token
   rejection, and the live startup probe;
-- stream item and byte bounds, slow consumers, gap accounting, cursor resume,
-  abort, detachment, idempotent close, one result, and no post-close delivery;
+- Cell, Thread, Workspace, Scratchpad, sandbox, and TaskRun snapshot identity,
+  hot sharing, late subscription, listener isolation, and no duplicated work;
+- atomic live attachment queue-before-seed order, codec-safe state version,
+  state epochs, latest-slot coalescing, optional durable plane, typed transient
+  planes, setup races, coordinated detach, and no private reducer;
+- replayable stream item and byte bounds, slow consumers, cursor branding,
+  resume-required closure, retention expiry, and independent subscribers;
+- transient stream item and byte bounds, exact gap accounting, epochs,
+  detachment, independent subscribers, and no accidental replay claim;
+- model, tool, sandbox acquisition and execution, materialization, ingestion,
+  and build operation progress, abort and close races, one result, no
+  post-result acceptance, accepted FIFO drain, and no wait on a slow
+  subscriber;
 - model ordering, correlation, offsets, cancellation, provider normalization,
   and zero hidden retries;
 - resource Workspace binding, build identity, independent review, deterministic
   compilation, activation timing, pinning, and revocation;
 - file normalization, traversal, collision rejection, mode preservation, tree
-  round trips, stale preconditions, quotas, and Scratchpad exclusion;
+  round trips, monotonic Workspace and Scratchpad generations, prior-state
+  preservation on stale preconditions or quota refusal, no raw-watcher event
+  leakage, and Scratchpad exclusion;
 - Materializer idempotency, read-only mounts, quiescence, full ingestion,
   partial failure, stale generations, and recovery evidence;
 - authority expiry, revocation, attenuation, action mismatch, and cross-target
@@ -1221,10 +2375,45 @@ suites cover:
   cancellation, reacquisition, expiry, egress, and idempotent close;
 - Workspace privacy, verified diff, review and check binding, candidate
   composition, stale-head rejection, and promotion compare-and-swap;
-- diagnostic redaction, queue bounds, gap accounting, sink isolation, metric
-  cardinality, and non-interference with task outcomes;
-- transport authentication, codecs, cursor resume, gaps, detach versus cancel,
-  and bounded clients.
+- diagnostic redaction, per-sink queue bounds, accepted write order, flush and
+  close ordering, failure policy, gap accounting, sink isolation, metric
+  cardinality, Archer runtime lifecycle visibility, and non-interference with
+  task outcomes;
+- TaskRun construction, pure snapshot transitions, terminal retention,
+  `settled` ordering, outcome versus detachment, awaiting approval, authorized
+  idempotent and preconditioned decisions, cancellation receipts, reattachment,
+  and one runtime regardless of subscriber count;
+- Archer close versus admission races and owned dependency close ordering;
+- lifecycle participant priority, one invocation per occurrence, exactly one
+  tagged result, timeout signal, failure policy, and acknowledged idempotent
+  effects when crash safety is claimed;
+- transport authentication, codecs, atomic state seed, monotonic versions,
+  cursor resume, presentation epochs, gaps, detach versus cancel, and bounded
+  clients without polling or a client-side domain reducer.
+
+Package tests import every root and subpath in a clean process. They prove root
+imports have no side effects, contract declarations contain no product or RxJS
+types, optional peers fail at adapter construction with an actionable error,
+and importing one adapter does not initialize another. Publication checks also
+install the documented one-task example into an empty fixture so package
+ergonomics are tested rather than inferred from the monorepo.
+
+The React binding suite proves subscribe-before-read setup, unmount detachment,
+final snapshot retention, no polling, and no framework-owned Archer state.
+
+Reducers and snapshot projections are tested directly with exact input and
+output values, legal and rejected transitions, terminal retention, preserved
+state on refusal, and input non-mutation. Hot sharing, queue overflow, abort,
+close, admission, and settlement races use a virtual scheduler and controlled
+sources. Proof asserts the exact subscribe, coalesce, accept, gap, resume,
+detach, flush, and emission sequence without sleeps. Transport tests run a real
+server and client against deterministic sources and prove that reconnection
+continues from one atomic seed without a polling interval or duplicate reducer.
+Package publication uses the real package manager, and adapter claims run
+against the real dependency or its maintained protocol harness. Every command
+must report the expected suite, collected tests, executed tests, skips,
+configuration, and required environment. A zero-test, cached,
+dependency-gated, or unexpectedly skipped run is not passing evidence.
 
 Passing evidence names the suite and protocol versions, implementation, exact
 configuration digest, required cases, results, time, and evidence digest. Every
@@ -1240,8 +2429,13 @@ adapter authors do not cast private symbols to participate.
 
 V1 supports:
 
-- one managed coding task with a terminal or paused result;
-- retained TaskRuns and multi-Turn Threads with one active Turn per Thread;
+- one managed coding task that immediately exposes a hot TaskRun, current
+  snapshot, replayable durable facts, transient presentation and diagnostics,
+  authorized commands, and outcome-or-detachment settlement;
+- reattached TaskRuns and hot multi-Turn Thread and Cell handles with one active
+  Turn per Thread;
+- public atomic live attachments for race-free worker, SSE, WebSocket, and
+  stdio projection of every hot handle;
 - application-coordinated multiple agents with distinct Principals, attenuated
   grants, budgets, ResourceSets, and private Workspaces;
 - an Archer-owned ordered transcript, typed repair, durable compaction, and
@@ -1251,15 +2445,16 @@ V1 supports:
 - exact model, prompt, skill, and TypeScript or JavaScript tool revisions,
   progressive disclosure, and between-Turn activation;
 - embedded SQLite Cells and the bucket snapshot reference host;
-- immutable regular-file trees, filesystem stores, private Workspaces,
-  Scratchpads, first-party Materializers, ingestion, and ChangeSets;
+- immutable regular-file trees, filesystem stores, hot private Workspace and
+  Scratchpad handles, live Materializers and ingestion, and ChangeSets;
 - QEMU/HVF on the verified x86_64 macOS profile;
 - Docker and process adapters under explicit development policies;
 - invocation-scoped secrets and current authority at every protected action;
 - private Git Workspace import, named checks, independent review, and
   expected-head promotion;
 - product-neutral diagnostics, Pino logs, OpenTelemetry metrics and traces,
-  CLI, HTTP/SSE, and public conformance suites.
+  a React `useLiveState` binding, CLI, HTTP/SSE, WebSocket, stdio, and public
+  conformance suites.
 
 The intended applications are local coding tools, durable background agents,
 interactive developer products, explicit multi-agent coordinators, adapter
@@ -1274,7 +2469,7 @@ Planned features have named homes:
   and evidence;
 - LTX belongs in a Cell host after its epoch-tail fencing proof exists;
 - S3-backed trees belong in a file-store adapter;
-- ACP and WebSocket belong in transport adapters;
+- ACP belongs in a future transport adapter;
 - richer POSIX metadata and safe symlinks require a new tree format and
   Materializer conformance version;
 - collaborative Thread editing, branches, rewind, and CRDT semantics belong in
@@ -1286,39 +2481,48 @@ Planned features have named homes:
 Construction follows dependency direction rather than starting with the
 managed demo:
 
-1. **Core, streams, and diagnostics.** Publish common codecs, Program,
-   lifecycle and ownership values, the public stream bridge, DiagnosticRecord,
-   deterministic fixtures, declaration-leak checks, and conformance.
+1. **Core, reactive state, and diagnostics.** Publish common codecs, Program,
+   lifecycle and ownership values, `LiveState`, distinct replayable and
+   transient streams, atomic live attachment, `LiveOperation`, internal RxJS
+   sharing, DiagnosticRecord, the per-sink diagnostic hub, the first-party Pino
+   sink, deterministic temporal fixtures, the generic React binding,
+   declaration-leak checks, and conformance.
 2. **Immutable files.** Build path codecs, blob and tree formats, filesystem
    stores, canonical hashing, and file fault cases before resources, Git, and
    sandboxes can invent separate formats.
-3. **Materialization and private work.** Build Materializer, physical view,
-   Scratchpad, Workspace lineage, ingestion, ChangeSet, and Git adapter
-   contracts. Keep promotion separate.
+3. **Materialization and private work.** Build hot Workspace and Scratchpad
+   handles, live Materializer and ingestion operations, physical views,
+   lineage, ChangeSet, and Git adapter contracts. Keep raw physical bytes and
+   promotion outside their snapshots.
 4. **Authority.** Publish action-specific scopes, ledger and broker ports,
    expiry, revocation, attenuation, and cross-target tests before protected
    mutation handles ship.
 5. **Cells.** Extract the pure lifecycle Program and retained SQLite, outbox,
    snapshot, fencing, wake, and RxJS activation mechanisms into embedded and
-   bucket hosts. Add the live storage semantics probe.
+   bucket `CellHost` implementations. Bind Program and state-projection
+   revisions at create and restore. Add the live storage semantics probe.
 6. **Models, prompts, and resources.** Replace SDK-shaped durable values,
-   implement one-step AI SDK adapters, finite prompt compilation, resource
-   build and admission, profiles, progressive disclosure, and between-Turn
-   activation.
-7. **Sandboxes and tools.** Rebuild candidate acquisition, independent exact
-   verification, invocation-scoped secrets, Materializer pairing, live exec,
-   and close evidence. Extract process, Docker, sandboxd, and QEMU/HVF
-   mechanisms only behind the new suites.
+   implement one-step AI SDK live operations, finite prompt compilation,
+   resource build and admission, replayable resource lifecycle, profiles,
+   progressive disclosure, and between-Turn activation.
+7. **Sandboxes and tools.** Rebuild live candidate acquisition, independent
+   exact verification, hot sandbox state, invocation-scoped secrets,
+   Materializer pairing, live execution and tool operations, and close
+   evidence. Extract process, Docker, sandboxd, and QEMU/HVF mechanisms only
+   behind the new suites.
 8. **Thread.** Build the coding Program, ordered transcript, raw-call binding,
    complete tool settlement, approval, budgets, cancellation, repair,
-   compaction, and Cell-backed retained handle.
-9. **Managed composition.** Add TaskRun, paused approval results, explicit
-   dependency ownership, default coding Resources, named presets, and the
-   one-call facade. The managed package should contain little new correctness
-   logic.
-10. **Operations and presentation.** Add Pino, OpenTelemetry, CLI, and HTTP/SSE
-    adapters. Prove that sink and transport failures cannot affect durable
-    outcomes.
+   compaction, and hot Cell-backed Thread handle.
+9. **Managed composition.** Implement TaskRun as a task-specific projection of
+   the same Thread and Cell graph, with immutable snapshots, separate durable,
+   presentation, and diagnostic streams, outcome-or-detachment settlement,
+   awaiting-approval state, reattachment, explicit dependency ownership,
+   default coding Resources, named presets, and the scoped one-task helper. The
+   managed package should contain no new domain reducer.
+10. **Operations and presentation.** Add OpenTelemetry, CLI, HTTP/SSE,
+    WebSocket, and stdio adapters over the same handles. Implement atomic
+    remote seeds and prove that listener, sink, and transport failures cannot
+    affect durable outcomes or create a polling or shadow-state path.
 11. **End-to-end proof.** Publish recovery, fencing, budget, exact-sandbox,
     ingestion, authority, multi-agent privacy, and promotion scenarios for each
     advertised preset and adapter configuration.
@@ -1332,25 +2536,32 @@ configuration.
 V1 does not provide or claim:
 
 - public RxJS types or a requirement that users understand RxJS operators;
+- a Promise-only managed task API or a second batch execution path;
+- Promise-only model, tool, sandbox acquisition, sandbox execution,
+  materialization, ingestion, or build attempts when progress or abort exists;
+- polling, a client-side domain reducer, or callback-only lifecycle as the
+  lower-level or remote substitute for a hot handle;
+- one stream that merges replayable durable facts with gap-tolerant transient
+  deltas and diagnostics;
 - a second actor, workflow, or provider-owned tool-loop framework;
 - exactly-once external effects or exactly-once token delivery;
 - automatic fallback to a weaker sandbox or equivalence between isolation
   classes;
 - production Firecracker, gVisor, Kata, Apple Silicon QEMU, or hardware remote
   attestation;
-- a universal mutable filesystem or full POSIX equivalence across adapters;
+- a universal mutable filesystem, raw watcher events as Workspace truth, or
+  full POSIX equivalence across adapters;
 - direct canonical bind mounts, implicit commits, or automatic promotion;
 - hidden provider retries, provider-owned tool recursion, or provider SDK
   transcript values;
 - sandbox-wide secrets, ambient host hooks, package lifecycle scripts, or
   agent self-admission;
 - one universal extension registry or one global reducer for every concern;
-- telemetry that affects acknowledgement, retry, task result, authority,
+- telemetry that affects acknowledgement, retry, task outcome, authority,
   checks, or promotion;
 - reconstruction of durable history from deltas, logs, metrics, or traces;
 - an automatic swarm strategy, semantic merge oracle, or claim that path
   scopes detect semantic conflict;
-- compatibility with the retained pre-009 package APIs.
 
 ## Decisions left to implementation
 
@@ -1366,8 +2577,8 @@ wire details to focused construction work:
   settled;
 - default context compaction thresholds and Scratchpad quotas, while their
   durable ownership and evidence are settled;
-- the first remote approval presentation, while paused one-call results and
-  retained authorized decisions are settled.
+- the first remote approval presentation, while hot awaiting-approval state,
+  reattachment, and retained authorized decisions are settled.
 
 These choices require prototypes or production traces. They do not require a
 new architectural layer.
@@ -1375,13 +2586,19 @@ new architectural layer.
 ## Summary
 
 Archer's v1 is a durable state-machine kernel surrounded by exact, replaceable
-contracts. RxJS stays inside the runtime. Public code sees readonly values,
-behavioral interfaces, owned handles, Promises, AbortSignals, bounded event
-streams, and tagged results. Files exist before sandboxes, diagnostics exist at
-every runtime boundary, and convenience compiles into the same authority,
-resource, Cell, Workspace, and sandbox facts used by direct composition.
+reactive contracts. RxJS owns one temporal graph per live source inside the
+runtime. Public code receives hot TaskRun, Thread, Cell, Workspace, Scratchpad,
+and sandbox handles; distinct replayable and transient streams; finite live
+operations; authorized commands; explicit lifecycle; and tagged outcomes. The
+public atomic attachment bridge lets remote adapters seed and project those
+contracts without polling, privileged runtime access, or reconstructed domain
+state. Pino logging works on the managed path from day one. Files exist before
+sandboxes, and convenience compiles into the same authority, resource, Cell,
+Workspace, and sandbox facts used by direct composition.
 
-The result should be easy at the top and honest at the bottom: run the task,
-enforce the budget, contain the process according to a named guarantee,
-preserve recoverable evidence, and never confuse private work with permission
-to publish it.
+The package layout follows the same promise. Start a task with opinionated
+defaults. Replace one capability through its root contract and adapter subpath.
+Take the core and build a different agent. At every depth Archer must show what
+the task is doing, enforce the budget, contain the process according to a named
+guarantee, preserve recovery evidence, and never confuse private work with
+permission to publish it.

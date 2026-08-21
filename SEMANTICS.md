@@ -26,6 +26,12 @@ effect intents under a sequence and fence epoch.
 The durability boundary that owns canonical state, event order, effect
 attempts, ownership fencing, wake state, and recovery.
 
+### CellHost
+
+A replaceable durability service that creates or restores Cells under exact
+Program, projection, codec, and durability revisions and returns a retained
+Cell handle.
+
 ### Thread
 
 A durable agent conversation and task history composed of Turns and ordered
@@ -42,27 +48,70 @@ part, tool proposal, tool result, repair, or compaction record.
 
 ### OwnedHandle
 
-A retained behavioral object with explicit asynchronous closure. Its close
-result records terminal lifecycle or recovery facts when the owned work can
-survive the current process.
+A retained behavioral object with idempotent asynchronous closure and one
+shared `closed` settlement. Its immutable close evidence records terminal
+lifecycle or recovery facts when the owned work can survive the current
+process.
 
-### EventStream
+### ReplayableEventStream
 
-A bounded public source of ongoing events. Each subscription owns only its
-delivery queue and attachment; closing a subscription does not cancel the work
-being observed.
+A bounded public source of ordered durable observations. Its branded cursor
+belongs to one source and permits exact continuation while retained history is
+available. A lagging subscriber resumes or detaches; it never receives a gap
+that could be mistaken for complete history.
+
+### TransientEventStream
+
+A bounded public source of ordered presentation or diagnostic events that may
+report explicit delivery gaps but makes no replay claim. Each subscription owns
+only its queue and attachment; closing it does not cancel the work observed.
+
+### LiveState
+
+A public source of immutable current state and subsequent state subscriptions.
+It is the standard-JavaScript projection of Archer's internal reactive runtime.
+
+### AtomicLiveAttachment
+
+A public transport and worker bridge that attaches bounded queues first and
+then returns one versioned current-state, durable-cursor, and transient-epoch
+seed from the existing live graph. It owns no reducer and starts no work.
 
 ### LiveOperation
 
-A retained owner of one finite live attempt, such as a model step or sandbox
-execution. It exposes bounded events, one terminal result, active abort, and
-close evidence.
+A retained owner of one finite live attempt, such as a model step, tool
+invocation, sandbox acquisition or execution, materialization, or ingestion.
+It exposes transient progress, one terminal result, active abort, and immutable
+close evidence. Closing observation does not alias abort.
 
 ### TaskRun
 
-A retained application attachment to one durable managed task. It exposes task
-observations, approval commands, a terminal or paused result, and durable
-cancellation without making the attachment itself authoritative.
+A retained behavioral object for one durable managed task. It exposes current
+state, replayable durable observations, transient presentation and diagnostics,
+authorized commands, outcome-or-detachment settlement, and recovery-aware
+attachment lifetime without becoming the authority for durable facts.
+
+### TaskRunSnapshot
+
+The immutable current projection of a TaskRun, discriminated by its lifecycle
+status. It combines acknowledged facts with explicitly transient activity and
+is not reconstructed from logs.
+
+### TaskOutcome
+
+The terminal completed, failed, or cancelled value of a TaskRun. Awaiting an
+approval is live task state, not a TaskOutcome.
+
+### TaskRunSettlement
+
+The tagged result of waiting on one TaskRun attachment. It contains either the
+durable task outcome or evidence that the attachment closed while the task may
+continue elsewhere.
+
+### CancellationReceipt
+
+Evidence that a durable cancellation command was accepted or refused. It is
+not itself a terminal task or Turn outcome.
 
 ## Resources and authority
 
@@ -120,6 +169,12 @@ does not depend on a sandbox, workspace adapter, or storage product.
 
 A private mutable view with its own identity and lineage. A Workspace may
 produce snapshots and a ChangeSet but does not own canonical promotion.
+
+### WorkspaceSnapshot
+
+An immutable transferable Workspace lineage product at one acknowledged tree
+and generation. It is distinct from the live snapshot of a retained Workspace
+handle.
 
 ### Scratchpad
 
