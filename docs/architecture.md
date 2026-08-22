@@ -638,10 +638,12 @@ every transition use the handle's ordered stream.
 Applications subscribe and then read the snapshot to close the setup race.
 Framework adapters can map this contract to React `useSyncExternalStore`, Vue,
 Svelte, or Solid without an Archer-specific runtime. The runtime does not await
-a listener. A listener failure is isolated and reported through diagnostics;
-it cannot fail the source or another listener. Code that blocks the entire
-JavaScript thread can still stall its host process. Applications that require
-process isolation consume the same state through a transport or worker.
+a listener. A listener failure is isolated; managed hosts report it through
+diagnostics, while callers constructing the low-level source supply
+`onListenerError` explicitly. The failure cannot fail the source or another
+listener. Code that blocks the entire JavaScript thread can still stall its
+host process. Applications that require process isolation consume the same
+state through a transport or worker.
 
 V1 ships `@archer/core/react` with a generic `useLiveState(source)` binding over
 `useSyncExternalStore`. It keeps no Archer domain state and works for TaskRun,
@@ -678,6 +680,17 @@ export type DeliveryBounds = Readonly<{
   capacityBytes?: number;
 }>;
 
+export type DeliveryLimits = Readonly<{
+  capacityItems: number;
+  capacityBytes: number;
+}>;
+
+export type EventEncoding<Event> = Readonly<{
+  revision: string;
+  normalize(event: Event): Event;
+  measure(event: Event): number;
+}>;
+
 export type ReplayDeliveryOptions<Cursor extends StreamCursor<string>> = DeliveryBounds &
   Readonly<{
     after?: Cursor;
@@ -693,9 +706,16 @@ export type DeliveryGap = Readonly<{
   kind: 'gap';
   source: string;
   epoch: string;
-  lostItems: number;
-  lostBytes: number;
+  lostItems: CanonicalDecimal;
+  lostBytes: CanonicalDecimal;
 }>;
+
+export type TransientEventDelivery<Event> = Readonly<{
+  kind: 'event';
+  value: Event;
+}>;
+
+export type TransientDelivery<Event> = TransientEventDelivery<Event> | DeliveryGap;
 
 export type ReplayableEvent<Event, Cursor extends StreamCursor<string>> = Readonly<{
   cursor: Cursor;
@@ -739,7 +759,7 @@ export interface TransientEventStream<Event> {
   readonly kind: 'transient';
   subscribe(
     options?: TransientDeliveryOptions,
-  ): EventSubscription<Event | DeliveryGap, TransientStreamClose, 'gap' | 'detach'>;
+  ): EventSubscription<TransientDelivery<Event>, TransientStreamClose, 'gap' | 'detach'>;
 }
 
 declare const stateVersionBrand: unique symbol;
@@ -781,11 +801,10 @@ export type LiveStateSeed<
 export type LiveAttachmentOptions<
   Cursor extends StreamCursor<string>,
   Transient extends Readonly<Record<string, unknown>>,
+  Planes extends keyof Transient = keyof Transient,
 > = Readonly<{
   durable?: [Cursor] extends [never] ? never : ReplayDeliveryOptions<Cursor>;
-  transient?: Partial<{
-    [Plane in keyof Transient]: TransientDeliveryOptions;
-  }>;
+  transient?: Readonly<Record<Planes, TransientDeliveryOptions>>;
 }>;
 
 export interface AtomicLiveAttachment<
@@ -802,7 +821,7 @@ export interface AtomicLiveAttachment<
     : EventSubscription<ReplayableEvent<DurableEvent, Cursor>, ReplayStreamClose<Cursor>, 'resume-required' | 'detach'>;
   readonly transient: Readonly<{
     [Plane in keyof Transient]: EventSubscription<
-      Transient[Plane] | DeliveryGap,
+      TransientDelivery<Transient[Plane]>,
       TransientStreamClose,
       'gap' | 'detach'
     >;
@@ -816,15 +835,32 @@ export interface AtomicLiveAttachmentSource<
   DurableEvent,
   Transient extends Readonly<Record<string, unknown>>,
 > {
-  attachLive(
-    options?: LiveAttachmentOptions<Cursor, Transient>,
-  ): Promise<AtomicLiveAttachment<State, Source, Cursor, DurableEvent, Transient>>;
+  attachLive<const Planes extends keyof Transient = keyof Transient>(
+    options?: LiveAttachmentOptions<Cursor, Transient, Planes>,
+  ): Promise<AtomicLiveAttachment<State, Source, Cursor, DurableEvent, Pick<Transient, Planes>>>;
 }
 
 export type AttemptAbortCommand = Readonly<{
   reason: string;
   idempotencyKey: IdempotencyKey;
 }>;
+
+export type AttemptAbortDisposition =
+  | Readonly<{
+      kind: 'attempt-settled';
+      outcome: 'aborted' | 'completed';
+    }>
+  | Readonly<{
+      kind: 'cleanup-unproved';
+      failure: PublicError;
+    }>;
+
+export type AttemptAbortEvidence =
+  | (AttemptAbortDisposition & Readonly<{ idempotencyKey: IdempotencyKey }>)
+  | Readonly<{
+      kind: 'already-settled';
+      idempotencyKey: IdempotencyKey;
+    }>;
 
 export interface LiveOperation<Event, Result, CloseEvidence> extends OwnedHandle<CloseEvidence> {
   readonly events: TransientEventStream<Event>;
@@ -861,6 +897,12 @@ raise them within source-declared limits. The selected policy is inspectable on
 the subscription. Item bounds count accepted values. Byte bounds use the
 source protocol's versioned codec over the event's canonical UTF-8 or binary
 encoding. The same measurement function runs in process and across transports.
+Low-level publishers therefore require an `EventEncoding`; they never infer
+wire size with an unversioned serialization heuristic. Its normalizer validates,
+copies, and freezes caller input into the source-owned value measured, retained,
+and delivered. Durable cursors carry that encoding revision. Invalid or failed
+normalization or measurement rejects admission before cursor, retention, or
+queue state changes.
 
 The delivery semantics are deliberate:
 
@@ -869,12 +911,13 @@ The delivery semantics are deliberate:
 - Replayable observations use source-branded cursors. They are not discarded. A lagging
   subscriber closes with `resume-required` and can reopen from its last safe
   cursor.
-- Transient deltas and diagnostics may use `gap`. The gap identifies the source
-  epoch and exact items and bytes lost. No cursor or resume option exists on
-  that type.
-- A cursor codec validates source identity, tenant or scope, protocol revision,
-  and retention window. A cursor from another task, Thread, or signal plane is
-  rejected.
+- Transient deltas and diagnostics use an outer `event` frame for application
+  data and may use `gap` for source-owned control evidence. The gap identifies
+  the source epoch and exact canonical-decimal items and bytes lost. No cursor
+  or resume option exists on that type.
+- A cursor codec validates source identity, tenant or scope, epoch, and protocol
+  revision. Source cursor admission then validates the current retention window.
+  A cursor from another task, Thread, or signal plane is rejected.
 - Every subscriber and diagnostic sink has an independent queue. A slow UI,
   logger, or remote client cannot pressure the shared graph or another
   subscriber.
@@ -928,9 +971,10 @@ meaningful progress or active cancellation.
 and conformance helpers. First-party runtime code adapts internal Observables
 at that boundary. Declaration checks reject accidental `rxjs` imports, and
 stream conformance covers snapshot identity, hot sharing, atomic attachment,
-subscriber isolation, byte and item limits, cursor source validation, resume,
-gap accounting, iterator `return()`, abort and close races, single
-finite-operation result, and no post-close delivery.
+subscriber isolation, source-owned event normalization, reserved delivery
+frames, byte and item limits, cursor source validation, retention, resume, exact
+gap accounting beyond safe-integer aggregates, iterator `return()`, abort and
+close races, single finite-operation result, and no post-close delivery.
 
 ### Comparison evidence
 

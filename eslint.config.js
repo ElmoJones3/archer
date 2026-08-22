@@ -1,3 +1,7 @@
+/**
+ * @file Applies Archer's shared lint contract to the repository.
+ */
+
 import archer from '@archer/eslint';
 
 export default [

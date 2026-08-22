@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "skills": {
+    "bruh": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/communication/bruh/SKILL.md",
+      "computedHash": "5bcc6a5ae79356e339de90b7811544a32c494b28760dd1e0de848e7f3cc34dc7"
+    },
+    "domain-modeling": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
+      "computedHash": "75858ca752b1770ee52db13482ef10757ccce2e103c0a8073983d538b7462534"
+    },
+    "principle-always-comment-code": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/principle-always-comment-code/SKILL.md",
+      "computedHash": "142d38eea90fb7848904fb6e31440e3b13eb7bd6381e3de50bbc897adeb706a1"
+    },
+    "principle-code-first-documentation": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/principle-code-first-documentation/SKILL.md",
+      "computedHash": "3abe27bd17c5e834a95e1feafc33666e7da8a31a327ab12be2aa50076e1ae0a6"
+    },
+    "principle-prefer-pure-functional-patterns": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/principle-prefer-pure-functional-patterns/SKILL.md",
+      "computedHash": "a82ffe51000acf3e74557bca01ba12073d450f7555a6a458113f8f7fa80cbc51"
+    },
+    "principle-test-boundaries": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-boundaries/SKILL.md",
+      "computedHash": "a08f1c9977bfe9b3377cb1b91a0c82ae92867c8f584018aaa7f6143cea26ed9b"
+    },
+    "principle-test-characterization": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-characterization/SKILL.md",
+      "computedHash": "9ea3b6b54d4cc08990d2286addd43662bdb505291ca2f17a18a3bbbe9091a3a9"
+    },
+    "principle-test-determinism": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-determinism/SKILL.md",
+      "computedHash": "5012e7a338f3aa946a910577c96e7606363d0520ed483badd92449e99d97f7f2"
+    },
+    "principle-test-execution": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-execution/SKILL.md",
+      "computedHash": "85db10a2d8863620e908a6c6b3c0595c6240e671f6ac924812143053ac54117c"
+    },
+    "principle-test-fixtures": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-fixtures/SKILL.md",
+      "computedHash": "ba177619d528f58b8e107473e71ad09390771a5f05b99b35747006cc56ff7e5a"
+    },
+    "principle-test-proof-derived-results": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-proof-derived-results/SKILL.md",
+      "computedHash": "ebebb01f1e9a3b512f96462c0b1b2b375e8031336d88db1f1eac3763a9806f80"
+    },
+    "principle-test-proof-failures": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-proof-failures/SKILL.md",
+      "computedHash": "6d2544207ec2589d235cdcea4e2ab6316f5385bfcc1376e97f883cb9cf037857"
+    },
+    "principle-test-proof-state-transitions": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-proof-state-transitions/SKILL.md",
+      "computedHash": "9edb68d2bc6eb54afb0399730911eb86035bb6f9c995fa18809066b8592ef754"
+    },
+    "principle-test-proof-transformations": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-proof-transformations/SKILL.md",
+      "computedHash": "bc4180e23a58e7b062147e71ca41c7c7d7520116b3a2248961a8915e3575e1b5"
+    },
+    "principle-test-support": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-support/SKILL.md",
+      "computedHash": "5b99830ac18c4a5cdd48f0486bfc2dc8c749ed5c285bd607b1ab2d4f4d4d218c"
+    },
+    "principle-test-tdd": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-test-tdd/SKILL.md",
+      "computedHash": "2cae07692ac746835956f62438a224db2010767d7b31999535984f9537624b0f"
+    },
+    "principle-testing-guidelines": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/testing/principle-testing-guidelines/SKILL.md",
+      "computedHash": "f0ba7ceb27e7d174bc8e3fb946d5014d4f8fb77fc2a14d5514392c513bf65fd8"
+    },
+    "semantic-mapping": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/semantic-mapping/SKILL.md",
+      "computedHash": "97dcd878773905444eb50d37b6beee18119f422aa92cfc868fc6f52869052553"
+    },
+    "semantic-snapshot": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/semantic-snapshot/SKILL.md",
+      "computedHash": "45305d73c608cf8fdf5af70f8bf1c98c017b85ce3ec02defe142819b4fb7cfae"
+    },
+    "stay-in-your-lane": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/communication/stay-in-your-lane/SKILL.md",
+      "computedHash": "32885d43f0b2f21de79cefd9c004e5175aac451e128f48d12152fc4cea0ea385"
+    },
+    "ui-component-composition": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-component-composition/SKILL.md",
+      "computedHash": "8df5c241709e42b505c1e4f61af5eafd808f5d7e78f2a2c7e1dbd3468679f31f"
+    },
+    "ui-component-layout": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-component-layout/SKILL.md",
+      "computedHash": "279a7a61206ab766be0fd13f1c8ff5ab7ba893ecc60359bb47ea7d8d4b36df8c"
+    },
+    "ui-component-prop-contracts": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-component-prop-contracts/SKILL.md",
+      "computedHash": "f7f69007addedbdd5c7e130c49c1895f540e92356ca3aa9d3125a4896719536d"
+    },
+    "ui-component-review": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-component-review/SKILL.md",
+      "computedHash": "9c109dd82680961ba76431df4b930c2cd3eeea5206cf9cbf644f7a80c3643c23"
+    },
+    "ui-component-style-groups": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-component-style-groups/SKILL.md",
+      "computedHash": "5ac5957e81ec00f309abb18ad6c1b0def6c377efb48b3771dc4ce40ba3a0d79c"
+    },
+    "ui-component-variants": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-component-variants/SKILL.md",
+      "computedHash": "4419c3d6d8ad84b657f087764df10d2376cd242f5f2369187698668690a7bd83"
+    },
+    "ui-compound-components": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-compound-components/SKILL.md",
+      "computedHash": "ad319b79c254f4fea98d0640691f9ea43c0d642bc5247931f12ec37d4631af27"
+    },
+    "ui-principle-state-management": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/ui/ui-principle-state-management/SKILL.md",
+      "computedHash": "3544dcab15128ab02bffd88468f5c336e4fb02d3553e6f75ebd105d67497b1bf"
+    },
+    "unslop": {
+      "source": "ElmoJones3/opinionated",
+      "sourceType": "github",
+      "skillPath": "skills/communication/unslop/SKILL.md",
+      "computedHash": "7d2e56ae8d575265053e2ee9d62803037dbb9da4ef399679ff160c5405641821"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 /**
- * Shared ESLint flat config for Archer.
+ * @file Defines the shared lint contract for every Archer package.
  *
  * The default export covers JavaScript, TypeScript, React, React hooks, and
  * Prettier. Consumers spread it into their own eslint.config.js and append
@@ -15,6 +15,7 @@
 
 import js from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
+import jsdoc from 'eslint-plugin-jsdoc';
 import prettier from 'eslint-plugin-prettier';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -148,6 +149,134 @@ export default tseslint.config(
       react: {
         version: 'detect',
       },
+    },
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
+    plugins: {
+      jsdoc,
+    },
+    rules: {
+      ...jsdoc.configs['flat/recommended-typescript-error'].rules,
+      'jsdoc/no-blank-block-descriptions': 'error',
+      'jsdoc/no-blank-blocks': 'error',
+      'jsdoc/require-description': [
+        'error',
+        {
+          contexts: [
+            'ArrowFunctionExpression',
+            'ClassDeclaration',
+            'ForInStatement',
+            'ForOfStatement',
+            'ForStatement',
+            'FunctionDeclaration',
+            'FunctionExpression',
+            'MethodDefinition',
+            'PropertyDefinition',
+            'TSCallSignatureDeclaration',
+            'TSConstructSignatureDeclaration',
+            'TSEnumDeclaration',
+            'TSEnumMember',
+            'TSInterfaceDeclaration',
+            'TSMethodSignature',
+            'TSPropertySignature',
+            'TSTypeAliasDeclaration',
+            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+            'VariableDeclaration:not(ExportNamedDeclaration > VariableDeclaration):not(ForOfStatement > VariableDeclaration):not(ForStatement > VariableDeclaration)',
+          ],
+        },
+      ],
+      'jsdoc/require-file-overview': 'error',
+      'jsdoc/require-jsdoc': [
+        'error',
+        {
+          checkConstructors: true,
+          checkGetters: true,
+          checkSetters: true,
+          contexts: [
+            'ForInStatement',
+            'ForOfStatement',
+            'ForStatement',
+            'PropertyDefinition',
+            'TSCallSignatureDeclaration',
+            'TSConstructSignatureDeclaration',
+            'TSEnumDeclaration',
+            'TSEnumMember',
+            'TSInterfaceDeclaration',
+            'TSMethodSignature',
+            'TSPropertySignature',
+            'TSTypeAliasDeclaration',
+            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+            'VariableDeclaration:not(ExportNamedDeclaration > VariableDeclaration):not(ForOfStatement > VariableDeclaration):not(ForStatement > VariableDeclaration)',
+          ],
+          exemptEmptyConstructors: false,
+          exemptEmptyFunctions: false,
+          require: {
+            ArrowFunctionExpression: true,
+            ClassDeclaration: true,
+            ClassExpression: true,
+            FunctionDeclaration: true,
+            FunctionExpression: true,
+            MethodDefinition: true,
+          },
+        },
+      ],
+    },
+  },
+  {
+    files: ['**/*.{js,cjs,mjs,jsx}'],
+    plugins: {
+      jsdoc,
+    },
+    rules: {
+      ...jsdoc.configs['flat/recommended-error'].rules,
+      'jsdoc/no-blank-block-descriptions': 'error',
+      'jsdoc/no-blank-blocks': 'error',
+      'jsdoc/require-description': [
+        'error',
+        {
+          contexts: [
+            'ArrowFunctionExpression',
+            'ClassDeclaration',
+            'ForInStatement',
+            'ForOfStatement',
+            'ForStatement',
+            'FunctionDeclaration',
+            'FunctionExpression',
+            'MethodDefinition',
+            'PropertyDefinition',
+            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+            'VariableDeclaration:not(ExportNamedDeclaration > VariableDeclaration):not(ForOfStatement > VariableDeclaration):not(ForStatement > VariableDeclaration)',
+          ],
+        },
+      ],
+      'jsdoc/require-file-overview': 'error',
+      'jsdoc/require-jsdoc': [
+        'error',
+        {
+          checkConstructors: true,
+          checkGetters: true,
+          checkSetters: true,
+          contexts: [
+            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+            'ForInStatement',
+            'ForOfStatement',
+            'ForStatement',
+            'PropertyDefinition',
+            'VariableDeclaration:not(ExportNamedDeclaration > VariableDeclaration):not(ForOfStatement > VariableDeclaration):not(ForStatement > VariableDeclaration)',
+          ],
+          exemptEmptyConstructors: false,
+          exemptEmptyFunctions: false,
+          require: {
+            ArrowFunctionExpression: true,
+            ClassDeclaration: true,
+            ClassExpression: true,
+            FunctionDeclaration: true,
+            FunctionExpression: true,
+            MethodDefinition: true,
+          },
+        },
+      ],
     },
   },
   {

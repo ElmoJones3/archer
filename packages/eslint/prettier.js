@@ -1,8 +1,20 @@
+/**
+ * @file Owns the Prettier choices shared by linting and direct formatting.
+ */
+
 import { createRequire } from 'node:module';
 
+/**
+ * Resolves Tailwind's formatter from this package so consumers do not need to
+ * install or resolve the plugin themselves.
+ */
 const tailwindPlugin = createRequire(import.meta.url).resolve('prettier-plugin-tailwindcss');
 
-/** @type {import('prettier').Config} */
+/**
+ * Keeps ESLint's Prettier rule and the repository formatter on one exact set of
+ * options; changing this value changes both enforcement paths.
+ * @type {import('prettier').Config}
+ */
 const prettierOptions = {
   singleQuote: true,
   trailingComma: 'all',

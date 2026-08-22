@@ -1,0 +1,47 @@
+/** @file Publishes Archer's normalized diagnostics contracts and dispatcher. */
+
+export {
+  DiagnosticCorrelationSchema,
+  DiagnosticPhaseSchema,
+  DiagnosticRecordSchema,
+  DiagnosticSeveritySchema,
+  type DiagnosticAttachOptions,
+  type DiagnosticAttachmentCloseEvidence,
+  type DiagnosticCorrelation,
+  type DiagnosticFilter,
+  type DiagnosticPhase,
+  type DiagnosticRecord,
+  type DiagnosticRecordInput,
+  type DiagnosticSeverity,
+  type DiagnosticSink,
+  type DiagnosticSinkCloseEvidence,
+  type Diagnostics,
+  type DiagnosticsCloseEvidence,
+} from './contracts.js';
+export {
+  createDiagnosticRecord,
+  createDiagnostics,
+  type DiagnosticClock,
+  type DiagnosticHub,
+  type DiagnosticShutdownTimer,
+  type DiagnosticsOptions,
+} from './hub.js';
+export {
+  CORE_DIAGNOSTICS_CONFORMANCE_TARGET,
+  DIAGNOSTICS_CONFORMANCE_CASES,
+  DIAGNOSTICS_CONFORMANCE_VERSION,
+  DiagnosticsConformanceError,
+  DiagnosticsConformanceReportSchema,
+  requirePassingDiagnosticsConformance,
+  runDiagnosticsConformance,
+  type DiagnosticsConformanceCase,
+  type DiagnosticsConformanceCaseId,
+  type DiagnosticsConformanceCaseResult,
+  type DiagnosticsConformanceImplementation,
+  type DiagnosticsConformanceReport,
+  type DiagnosticsConformanceTarget,
+  type FailedDiagnosticsConformanceCase,
+  type PassingDiagnosticsConformance,
+  type PassedDiagnosticsConformanceCase,
+  type RunDiagnosticsConformanceOptions,
+} from './conformance.js';
