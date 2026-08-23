@@ -44,3 +44,12 @@ claimed behavior.
 - [`core/reactive-job-runner`](core/reactive-job-runner/README.md) composes a
   pure `Program`, living state, bounded event delivery, finite work, abort, and
   wide diagnostics without an agent, model, sandbox, or network dependency.
+- [`observability/diagnostic-projections`](observability/diagnostic-projections/README.md)
+  sends one accumulated terminal record to Pino and a real OpenTelemetry SDK
+  while preserving independent delivery and explicit lifecycle ownership.
+- [`files/immutable-tree`](files/immutable-tree/README.md) proves canonical
+  identity convergence, hierarchical structural sharing, path rejection, and
+  retained in-memory cleanup without a host filesystem.
+- [`files/local-store`](files/local-store/README.md) persists the same immutable
+  contracts through `@archer/files/fs`, closes, reopens, verifies a stream,
+  handles missing content, and cleans only its example-owned temporary root.

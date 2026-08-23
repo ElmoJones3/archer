@@ -1036,8 +1036,17 @@ authority.
 ### Immutable trees
 
 `@archer/files` owns logical paths, `BlobRef`, `TreeRef`, tree entries, blob and
-tree stores, codecs, and canonical hashing. It has no dependency on Git,
-sandboxing, Workspace policy, or host paths.
+tree stores, codecs, and canonical hashing. Its root contracts and identity
+rules have no dependency on Git, sandboxing, Workspace policy, or host paths.
+
+The public construction surface may accept a flat list of complete logical
+file paths. That is an ergonomic input, not the identity model. Publication
+compiles those paths into a Merkle hierarchy of canonical directory nodes. A
+node contains only its directly named regular-file and directory children. A
+directory child carries another `TreeRef`; a file child carries a `BlobRef`.
+Changing one file therefore replaces its blob and the directory nodes on its
+path to the root while unrelated directory references remain identical. Empty
+directories have no canonical identity in v1.
 
 The first tree format is intentionally narrow:
 
@@ -1048,21 +1057,77 @@ The first tree format is intentionally narrow:
 - directories are derived from paths;
 - symlinks, hard links, devices, sockets, FIFOs, ownership, and platform-only
   mode bits are rejected;
-- entries sort by the UTF-8 bytes of their normalized paths;
-- a versioned canonical encoding and child blob digests determine the tree
-  digest;
+- each directory's direct child names sort by normalized UTF-8 bytes;
+- an Archer-owned versioned canonical encoding and child blob or tree
+  references determine each directory digest;
 - a case-insensitive target rejects logical name collisions rather than
   merging or renaming them.
 
-Blob reads are streaming and digest-verified. Tree publication and restoration
-validate every path, mode, child reference, canonical order, and top-level
-digest. A TypeScript brand only records that a validator ran in the current
-process. It is not proof after deserialization.
+References are immutable values with explicit lengths:
+
+```ts
+export type BlobRef = Readonly<{
+  digest: `sha256:${string}`; // SHA-256 over raw file bytes
+  byteLength: CanonicalDecimal;
+}>;
+
+export type TreeRef = Readonly<{
+  format: 'archer-tree-v1';
+  digest: `sha256:${string}`; // SHA-256 over complete canonical node bytes
+  byteLength: CanonicalDecimal;
+}>;
+```
+
+The `archer-tree-v1` byte grammar is fixed:
+
+| Field                        | Encoding                                                      |
+| ---------------------------- | ------------------------------------------------------------- |
+| Header                       | ASCII `ARCHER\0TREE\0`, `u8` version `1`, `u32be` entry count |
+| Every entry                  | `u8` kind, `u32be` name length, NFC UTF-8 direct child name   |
+| File entry, kind `0`         | `u8` mode, `u64be` blob length, raw 32-byte SHA-256 digest    |
+| Directory entry, kind `1`    | `u64be` node length, raw 32-byte SHA-256 digest               |
+| File mode `0`; file mode `1` | portable readable `0644`; portable executable `0755`          |
+
+No alignment bytes, alternate integer widths, trailing data, repaired UTF-8,
+or semantically equivalent serialization are accepted. The decoder checks
+magic, version, bounds, UTF-8 validity, NFC spelling, direct-name order,
+uniqueness, field values, complete consumption, and byte-for-byte canonical
+re-encoding. Permanent golden byte and digest vectors and fixed-seed
+property-based tests protect the format across implementations and upgrades.
+
+Blob reads stream and verify their digest and byte length at successful
+completion. Tree publication validates the complete path set before consuming
+an asynchronous content source or touching a store. Restoration recursively
+verifies every node reference and blob's exact presence before returning an
+immutable flat projection. A TypeScript brand only records that a validator
+ran in the current process. It is not proof after deserialization.
+
+`FileStore` combines product-neutral `BlobStore` and `TreeStore` ports under one
+explicit retained lifecycle. The in-memory implementation is a root-package
+default for tests and ephemeral composition. `@archer/files/fs` is a durable
+local adapter: it stages complete objects, atomically publishes digest-derived
+paths, deduplicates concurrent equal writes, verifies reads, survives attachment
+closure, and never deletes durable objects merely because a handle closes.
+Opening the filesystem adapter is a fallible operation and returns Archer's
+ordinary `Result<FileStore, FilesError>`.
+
+`@archer/files` uses Zod 4 to admit runtime values, `@archer/core` for shared
+value and lifecycle contracts, and Node primitives for SHA-256 and first-party
+local persistence. Zod does not define canonical bytes. `fast-check` is a
+development dependency used to prove identity convergence; no VFS or general
+serializer enters the runtime identity path.
 
 Prompt, skill, tool, and code resources refer to a `TreeRef` and path rather
 than embedding arbitrary mutable source in control records. Small inline text
 may remain construction sugar, but the resource compiler publishes it into an
 immutable tree before admission.
+
+A VFS remains useful behind a Materializer, Workspace implementation, editor,
+or remote storage adapter when it simplifies physical access. It is not the
+first-party domain object and cannot define logical paths, tree encoding,
+content identity, lineage, or promotion. This indirection is intentional: a
+storage implementation, a claim on content, and a workload's physical view are
+different responsibilities even when one local preset constructs all three.
 
 ### Workspaces and Scratchpads
 
@@ -1917,6 +1982,9 @@ import { fileTreeStore } from '@archer/files/fs';
 import { gitWorkspaces } from '@archer/files/git';
 import { pinoSink } from '@archer/observability/pino';
 
+const fileStore = await fileTreeStore(fileOptions);
+if (!fileStore.ok) throw fileStore.error;
+
 const diagnostics = await diagnosticHub({
   sinks: [owned(await pinoSink({ level: 'info' }))],
 });
@@ -1924,7 +1992,7 @@ const diagnostics = await diagnosticHub({
 await using archer = await composeArcher({
   cells: owned(await bucketSqliteCells(cellOptions)),
   models: borrowed(modelRouter),
-  files: owned(await fileTreeStore(fileOptions)),
+  files: owned(fileStore.value),
   materializers: borrowed(materializerRegistry),
   workspaces: owned(await gitWorkspaces(gitOptions)),
   resources: borrowed(resourceControl),
@@ -2395,7 +2463,7 @@ per interface or first-party adapter:
 | Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                      | Intentional package dependencies                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/diagnostics` | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
-| `@archer/files`         | Logical paths, immutable trees, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts                                       | `/fs`, `/s3`, `/git`, `/materializer/directory`, `/materializer/docker`, `/materializer/qemu`                             | `core`; adapter-specific optional peers                                                                 |
+| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/s3`, `/git`, `/materializer/directory`, `/materializer/docker`, `/materializer/qemu`                             | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                   |
 | `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                 | `core`; AI SDK bundled for the supported first-party adapter                                            |
 | `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                      | `core`, `files`, `models`                                                                               |
 | `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                        | `core`, `files`; backend-specific optional peers                                                        |
@@ -2446,7 +2514,7 @@ independently against the protocol and conformance version they implement.
 | Embedded durability            | `node:sqlite`, with no ORM in the journal or outbox path                                                         |
 | Distributed reference host     | SQLite snapshots plus conditional object-store operations and a mandatory live semantics probe                   |
 | S3-compatible storage          | AWS SDK v3 inside the S3 adapter                                                                                 |
-| File identity                  | SHA-256 blobs and a versioned canonical tree encoding                                                            |
+| File identity                  | Raw SHA-256 blobs and hierarchical `archer-tree-v1` directory nodes with permanent canonical bytes               |
 | Workspace source and promotion | Git CLI inside the Git adapter; no Git value in ChangeSet contracts                                              |
 | Sandbox control                | Existing `sandboxd` and QEMU runner mechanisms behind rebuilt exact contracts; Docker CLI for development        |
 | Structured logging             | Pino over Archer diagnostics, included by default in managed presets                                             |
@@ -2523,10 +2591,14 @@ suites cover:
   and zero hidden retries;
 - resource Workspace binding, build identity, independent review, deterministic
   compilation, activation timing, pinning, and revocation;
-- file normalization, traversal, collision rejection, mode preservation, tree
-  round trips, monotonic Workspace and Scratchpad generations, prior-state
-  preservation on stale preconditions or quota refusal, no raw-watcher event
-  leakage, and Scratchpad exclusion;
+- file normalization, traversal, collision rejection, mode preservation,
+  permanent byte vectors, permutation convergence, strict decode rejection,
+  recursive structural sharing, missing child references, verified streaming
+  reads, atomic local deduplication, attachment reopen, and retained store
+  closure;
+- monotonic Workspace and Scratchpad generations, prior-state preservation on
+  stale preconditions or quota refusal, no raw-watcher event leakage, and
+  Scratchpad exclusion;
 - Materializer idempotency, read-only mounts, quiescence, full ingestion,
   partial failure, stale generations, and recovery evidence;
 - authority expiry, revocation, attenuation, action mismatch, and cross-target
@@ -2648,9 +2720,11 @@ managed demo:
    DiagnosticRecords, the per-sink diagnostic hub, the first-party Pino sink,
    deterministic temporal fixtures, the generic React binding,
    declaration-leak checks, conformance, and the root core reactive-job example.
-2. **Immutable files.** Build path codecs, blob and tree formats, filesystem
-   stores, canonical hashing, and file fault cases before resources, Git, and
-   sandboxes can invent separate formats.
+2. **Immutable files.** Build path codecs, hierarchical blob and tree formats,
+   the owned canonical v1 grammar, memory and filesystem stores, canonical
+   hashing, structural sharing, verified streaming, property and fault cases,
+   and runnable immutable-tree and local-store examples before resources, Git,
+   and sandboxes can invent separate formats.
 3. **Materialization and private work.** Build hot Workspace and Scratchpad
    handles, live Materializer and ingestion operations, physical views,
    lineage, ChangeSet, and Git adapter contracts. Keep raw physical bytes and
@@ -2726,11 +2800,12 @@ V1 does not provide or claim:
 
 ## Decisions left to implementation
 
-The architecture fixes the boundaries while leaving measured constants and
-wire details to focused construction work:
+The architecture fixes the boundaries and identity-bearing wire details while
+leaving measured operational constants to focused construction work:
 
-- the exact canonical tree byte encoding, while SHA-256, normalization,
-  ordering, entry kinds, and collision policy are settled;
+- measured logical-name, direct-entry, decoded-node, source, and local staging
+  bounds, while the canonical v1 grammar, hashing, normalization, ordering,
+  entry kinds, strict decode, and collision policy are settled;
 - default queue sizes and slow-consumer thresholds for each adapter, while
   bounded delivery and explicit loss are settled;
 - exact diagnostic span and event names and OpenTelemetry span links, while the
