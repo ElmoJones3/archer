@@ -1,0 +1,91 @@
+{
+  "name": "@archer/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./diagnostics": {
+      "types": "./dist/diagnostics/index.d.ts",
+      "import": "./dist/diagnostics/index.js"
+    },
+    "./diagnostics/conformance": {
+      "types": "./dist/diagnostics/conformance.d.ts",
+      "import": "./dist/diagnostics/conformance.js"
+    },
+    "./ownership": {
+      "types": "./dist/ownership.d.ts",
+      "import": "./dist/ownership.js"
+    },
+    "./program": {
+      "types": "./dist/program.d.ts",
+      "import": "./dist/program.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./stream": {
+      "types": "./dist/stream/index.d.ts",
+      "import": "./dist/stream/index.js"
+    },
+    "./stream/conformance": {
+      "types": "./dist/stream/conformance.d.ts",
+      "import": "./dist/stream/conformance.js"
+    },
+    "./stream/testing": {
+      "types": "./dist/stream/testing.d.ts",
+      "import": "./dist/stream/testing.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=26.7.0 <27"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check:declarations": "pnpm run build && node scripts/check-declarations.mjs",
+    "check:package": "pnpm run build && node scripts/probe-diagnostics-liveness.mjs && node scripts/check-package.mjs",
+    "lint": "eslint src test scripts",
+    "test": "vitest run --reporter=verbose",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@archer/eslint": "workspace:*",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "eslint": "^9.39.5",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "rxjs": "^7.8.2",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}

@@ -1,5 +1,6 @@
 packages:
   - 'packages/*'
+  - 'examples/*/*'
   - '!packages/cell-runtime'
   - '!packages/sandbox-runtime'
 

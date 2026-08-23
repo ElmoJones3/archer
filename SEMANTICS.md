@@ -4,6 +4,35 @@ Owner: `Archer`
 
 Terms in this file belong to Archer's public domain.
 
+## Core contracts
+
+### ArcherError
+
+The public base Error for failures owned by Archer. Focused Archer error
+categories may extend it; ordinary domain outcomes remain tagged values.
+
+### ArcherObject
+
+The shared identity envelope for an identity-bearing Archer domain object. It
+carries a UUIDv4 ID, a stable object discriminator, and its trusted creation
+time.
+
+### Result
+
+Archer's exact success-or-failure value, represented as either
+`{ ok: true, value }` or `{ ok: false, error }`. The failure is an Error;
+expected domain outcomes use their own tagged values.
+
+### PublicError
+
+A bounded, immutable JSON failure safe for transport and diagnostics. It is a
+redacted projection of a local Error, never the native Error object itself.
+
+### IdempotencyKey
+
+A UUIDv4 command identity scoped to deduplication at the receiving boundary.
+It does not identify the domain object or grant authority to execute a command.
+
 ## Durable execution
 
 ### Program
@@ -53,6 +82,27 @@ shared `closed` settlement. Its immutable close evidence records terminal
 lifecycle or recovery facts when the owned work can survive the current
 process.
 
+### ComponentRef
+
+An explicit `owned` or `borrowed` reference that tells a composition whether
+it may close an injected retained dependency. A close-shaped method never
+implies ownership by itself.
+
+### EventEncoding
+
+The required revision, source-owned normalization, and canonical encoded-byte
+measurement for one event protocol. Normalization validates, copies, and
+freezes caller input before measurement, retention, or fan-out. A low-level
+source uses the same encoding contract for queue limits, loss evidence,
+cursors, and transport conformance; it does not guess from a JavaScript object
+representation.
+
+### StreamCursorCodec
+
+The public constructor and verifier for a replay cursor bound to source family,
+scope, logical stream, epoch, and event protocol revision. A delivered cursor
+resumes strictly after that event; callers never manufacture cursors by cast.
+
 ### ReplayableEventStream
 
 A bounded public source of ordered durable observations. Its branded cursor
@@ -63,13 +113,36 @@ that could be mistaken for complete history.
 ### TransientEventStream
 
 A bounded public source of ordered presentation or diagnostic events that may
-report explicit delivery gaps but makes no replay claim. Each subscription owns
-only its queue and attachment; closing it does not cancel the work observed.
+report explicit delivery gaps but makes no replay claim. Ordinary data is
+wrapped in an `event` delivery frame so its shape cannot impersonate a gap.
+Each subscription owns only its queue and attachment; closing it does not
+cancel the work observed.
+
+### TransientDelivery
+
+The transport frame returned by a transient subscription. An `event` frame
+carries normalized application data; a `gap` frame carries source-owned loss
+evidence. The outer discriminator is reserved by Archer and cannot be forged by
+the application event's own shape.
 
 ### LiveState
 
 A public source of immutable current state and subsequent state subscriptions.
 It is the standard-JavaScript projection of Archer's internal reactive runtime.
+The source retains a normalized immutable snapshot supplied by its aggregate
+boundary rather than cloning an arbitrary generic object.
+
+### StateVersion
+
+A canonical non-negative decimal that increases monotonically within one live
+state source and epoch. Versions from different sources or epochs are not
+comparable.
+
+### DeliveryGap
+
+Exact canonical-decimal item and encoded-byte loss for one transient subscriber
+within one source epoch. It is source-owned presentation evidence, not an
+application event or durable replay position.
 
 ### AtomicLiveAttachment
 
@@ -83,6 +156,19 @@ A retained owner of one finite live attempt, such as a model step, tool
 invocation, sandbox acquisition or execution, materialization, or ingestion.
 It exposes transient progress, one terminal result, active abort, and immutable
 close evidence. Closing observation does not alias abort.
+
+### AttemptAbortEvidence
+
+Terminal evidence for one idempotent active-abort command. It records that the
+attempt settled as aborted or completed, that cleanup could not be proved, or
+that the command arrived after settlement; signal delivery alone is not enough.
+
+### Conformance report
+
+A complete, versioned set of required protocol case results bound to one named
+implementation, exact version, and immutable configuration. Only a report in
+which every required case ran and passed can be promoted to conformance
+evidence.
 
 ### TaskRun
 
@@ -218,10 +304,35 @@ authority or failure rules.
 
 ### DiagnosticRecord
 
-A normalized, redacted operational observation correlated with Archer work.
-It is not durable state, authority, retry evidence, or a task outcome.
+A normalized, redacted terminal DiagnosticSpan record or standalone
+DiagnosticEvent correlated with Archer work. It is not durable state,
+authority, retry evidence, or a task outcome.
+
+### DiagnosticSpan
+
+A process-local diagnostic lifecycle for one finite attempt or service hop. It
+accumulates admitted context and settles once as completed, failed, or
+abandoned.
+
+### DiagnosticSpanRecord
+
+The immutable terminal DiagnosticRecord emitted when a DiagnosticSpan settles.
+It contains the span identity, timing, settlement, accumulated context, and
+enrichment-loss evidence.
+
+### DiagnosticEvent
+
+A standalone DiagnosticRecord for an operational observation with no
+meaningful duration. It is not a breadcrumb emitted from inside a
+DiagnosticSpan.
 
 ### DiagnosticSink
 
 A best-effort destination for DiagnosticRecords, such as structured logging or
 telemetry transport. Its failure cannot change durable work.
+
+### DiagnosticHub
+
+The retained producer and extension boundary for DiagnosticRecords. It fans
+records out without awaiting domain work, begins DiagnosticSpans, and gives
+every attached sink an independent bounded, serialized queue.

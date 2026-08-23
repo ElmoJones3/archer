@@ -109,12 +109,13 @@ without turning every interface into another package to install, version, and
 discover.
 
 Logging is part of the runtime. Logs begin as a bounded diagnostic stream, not
-as ambient calls scattered through domain code. Every effect attempt,
-lifecycle phase, recovery decision, and adapter boundary emits structured
-diagnostics. Managed Node presets attach a redacted Pino projection by default.
-Applications can subscribe directly, change filters, add sinks, or replace the
-logger without changing durable behavior. An observable core with invisible
-operation would be unfinished.
+as ambient calls scattered through domain code. Effect attempts and adapter
+operations open explicit spans, accumulate context, and emit one terminal wide
+record. Instantaneous lifecycle and recovery observations use standalone
+events only when no duration exists. Managed Node presets attach a redacted
+Pino projection by default. Applications can subscribe directly, change
+filters, add sinks, or replace the logger without changing durable behavior.
+An observable core with invisible operation would be unfinished.
 
 Archer is for the people who run it and the people who want to change it. The
 public protocols, codecs, source modules, defaults, and conformance suites are
@@ -145,10 +146,12 @@ The following rules apply at every entry point:
    snapshot, version, and cursor seed obtained through the handle's public
    bridge. SSE, WebSocket, and stdio preserve the same state, stream, command,
    settlement, and close semantics without polling or privileged internals.
-6. **Make operation visible.** Diagnostics and logs are bounded streams.
-   Managed Node construction includes structured Pino output, while logging,
-   metrics, traces, and subscribers remain non-authoritative, redacted, and
-   replaceable.
+6. **Make operation visible.** Concrete process-local work opens an explicit,
+   bounded DiagnosticSpan, accumulates namespaced context, and emits one
+   terminal wide record. Point events are reserved for observations without a
+   useful duration. Diagnostics and their log projections remain bounded,
+   redacted, non-authoritative streams. Managed Node construction includes
+   replaceable structured Pino output.
 7. **Make composition exact.** Every default, preset, adapter, and extension
    uses public contracts. Direct composition may replace any component without
    entering an internal API or weakening another component's guarantees.
@@ -184,6 +187,11 @@ The following rules apply at every entry point:
     composition.
 19. **Ship proof with the port.** A replaceable contract is incomplete without
     codecs, required failure cases, and a versioned conformance suite.
+20. **Ship proof with the layer.** Every new or materially changed public layer
+    adds or updates a root `examples/<layer>/<scenario>` application. Examples
+    import only public package entry points, state their dependency assumptions,
+    exercise failure and cleanup as well as success, and run in the repository's
+    normal build, test, and lint pipeline.
 
 ## Public values, interfaces, and classes
 
@@ -638,10 +646,12 @@ every transition use the handle's ordered stream.
 Applications subscribe and then read the snapshot to close the setup race.
 Framework adapters can map this contract to React `useSyncExternalStore`, Vue,
 Svelte, or Solid without an Archer-specific runtime. The runtime does not await
-a listener. A listener failure is isolated and reported through diagnostics;
-it cannot fail the source or another listener. Code that blocks the entire
-JavaScript thread can still stall its host process. Applications that require
-process isolation consume the same state through a transport or worker.
+a listener. A listener failure is isolated; managed hosts report it through
+diagnostics, while callers constructing the low-level source supply
+`onListenerError` explicitly. The failure cannot fail the source or another
+listener. Code that blocks the entire JavaScript thread can still stall its
+host process. Applications that require process isolation consume the same
+state through a transport or worker.
 
 V1 ships `@archer/core/react` with a generic `useLiveState(source)` binding over
 `useSyncExternalStore`. It keeps no Archer domain state and works for TaskRun,
@@ -678,6 +688,17 @@ export type DeliveryBounds = Readonly<{
   capacityBytes?: number;
 }>;
 
+export type DeliveryLimits = Readonly<{
+  capacityItems: number;
+  capacityBytes: number;
+}>;
+
+export type EventEncoding<Event> = Readonly<{
+  revision: string;
+  normalize(event: Event): Event;
+  measure(event: Event): number;
+}>;
+
 export type ReplayDeliveryOptions<Cursor extends StreamCursor<string>> = DeliveryBounds &
   Readonly<{
     after?: Cursor;
@@ -693,9 +714,16 @@ export type DeliveryGap = Readonly<{
   kind: 'gap';
   source: string;
   epoch: string;
-  lostItems: number;
-  lostBytes: number;
+  lostItems: CanonicalDecimal;
+  lostBytes: CanonicalDecimal;
 }>;
+
+export type TransientEventDelivery<Event> = Readonly<{
+  kind: 'event';
+  value: Event;
+}>;
+
+export type TransientDelivery<Event> = TransientEventDelivery<Event> | DeliveryGap;
 
 export type ReplayableEvent<Event, Cursor extends StreamCursor<string>> = Readonly<{
   cursor: Cursor;
@@ -739,7 +767,7 @@ export interface TransientEventStream<Event> {
   readonly kind: 'transient';
   subscribe(
     options?: TransientDeliveryOptions,
-  ): EventSubscription<Event | DeliveryGap, TransientStreamClose, 'gap' | 'detach'>;
+  ): EventSubscription<TransientDelivery<Event>, TransientStreamClose, 'gap' | 'detach'>;
 }
 
 declare const stateVersionBrand: unique symbol;
@@ -781,11 +809,10 @@ export type LiveStateSeed<
 export type LiveAttachmentOptions<
   Cursor extends StreamCursor<string>,
   Transient extends Readonly<Record<string, unknown>>,
+  Planes extends keyof Transient = keyof Transient,
 > = Readonly<{
   durable?: [Cursor] extends [never] ? never : ReplayDeliveryOptions<Cursor>;
-  transient?: Partial<{
-    [Plane in keyof Transient]: TransientDeliveryOptions;
-  }>;
+  transient?: Readonly<Record<Planes, TransientDeliveryOptions>>;
 }>;
 
 export interface AtomicLiveAttachment<
@@ -802,7 +829,7 @@ export interface AtomicLiveAttachment<
     : EventSubscription<ReplayableEvent<DurableEvent, Cursor>, ReplayStreamClose<Cursor>, 'resume-required' | 'detach'>;
   readonly transient: Readonly<{
     [Plane in keyof Transient]: EventSubscription<
-      Transient[Plane] | DeliveryGap,
+      TransientDelivery<Transient[Plane]>,
       TransientStreamClose,
       'gap' | 'detach'
     >;
@@ -816,15 +843,32 @@ export interface AtomicLiveAttachmentSource<
   DurableEvent,
   Transient extends Readonly<Record<string, unknown>>,
 > {
-  attachLive(
-    options?: LiveAttachmentOptions<Cursor, Transient>,
-  ): Promise<AtomicLiveAttachment<State, Source, Cursor, DurableEvent, Transient>>;
+  attachLive<const Planes extends keyof Transient = keyof Transient>(
+    options?: LiveAttachmentOptions<Cursor, Transient, Planes>,
+  ): Promise<AtomicLiveAttachment<State, Source, Cursor, DurableEvent, Pick<Transient, Planes>>>;
 }
 
 export type AttemptAbortCommand = Readonly<{
   reason: string;
   idempotencyKey: IdempotencyKey;
 }>;
+
+export type AttemptAbortDisposition =
+  | Readonly<{
+      kind: 'attempt-settled';
+      outcome: 'aborted' | 'completed';
+    }>
+  | Readonly<{
+      kind: 'cleanup-unproved';
+      failure: PublicError;
+    }>;
+
+export type AttemptAbortEvidence =
+  | (AttemptAbortDisposition & Readonly<{ idempotencyKey: IdempotencyKey }>)
+  | Readonly<{
+      kind: 'already-settled';
+      idempotencyKey: IdempotencyKey;
+    }>;
 
 export interface LiveOperation<Event, Result, CloseEvidence> extends OwnedHandle<CloseEvidence> {
   readonly events: TransientEventStream<Event>;
@@ -861,6 +905,12 @@ raise them within source-declared limits. The selected policy is inspectable on
 the subscription. Item bounds count accepted values. Byte bounds use the
 source protocol's versioned codec over the event's canonical UTF-8 or binary
 encoding. The same measurement function runs in process and across transports.
+Low-level publishers therefore require an `EventEncoding`; they never infer
+wire size with an unversioned serialization heuristic. Its normalizer validates,
+copies, and freezes caller input into the source-owned value measured, retained,
+and delivered. Durable cursors carry that encoding revision. Invalid or failed
+normalization or measurement rejects admission before cursor, retention, or
+queue state changes.
 
 The delivery semantics are deliberate:
 
@@ -869,12 +919,13 @@ The delivery semantics are deliberate:
 - Replayable observations use source-branded cursors. They are not discarded. A lagging
   subscriber closes with `resume-required` and can reopen from its last safe
   cursor.
-- Transient deltas and diagnostics may use `gap`. The gap identifies the source
-  epoch and exact items and bytes lost. No cursor or resume option exists on
-  that type.
-- A cursor codec validates source identity, tenant or scope, protocol revision,
-  and retention window. A cursor from another task, Thread, or signal plane is
-  rejected.
+- Transient deltas and diagnostics use an outer `event` frame for application
+  data and may use `gap` for source-owned control evidence. The gap identifies
+  the source epoch and exact canonical-decimal items and bytes lost. No cursor
+  or resume option exists on that type.
+- A cursor codec validates source identity, tenant or scope, epoch, and protocol
+  revision. Source cursor admission then validates the current retention window.
+  A cursor from another task, Thread, or signal plane is rejected.
 - Every subscriber and diagnostic sink has an independent queue. A slow UI,
   logger, or remote client cannot pressure the shared graph or another
   subscriber.
@@ -928,9 +979,10 @@ meaningful progress or active cancellation.
 and conformance helpers. First-party runtime code adapts internal Observables
 at that boundary. Declaration checks reject accidental `rxjs` imports, and
 stream conformance covers snapshot identity, hot sharing, atomic attachment,
-subscriber isolation, byte and item limits, cursor source validation, resume,
-gap accounting, iterator `return()`, abort and close races, single
-finite-operation result, and no post-close delivery.
+subscriber isolation, source-owned event normalization, reserved delivery
+frames, byte and item limits, cursor source validation, retention, resume, exact
+gap accounting beyond safe-integer aggregates, iterator `return()`, abort and
+close races, single finite-operation result, and no post-close delivery.
 
 ### Comparison evidence
 
@@ -2063,6 +2115,10 @@ Close, detach, live abort, and durable cancel remain distinct. No
 
 ## Observability
 
+Archer accumulates one wide diagnostic record for each concrete process-local
+span. It does not narrate execution through logger calls. The full engineering
+policy lives in [Logging what happened, not what the code said](logging-principles.md).
+
 Archer has four observable planes with different authority:
 
 1. **Live state** exposes bounded immutable snapshots for TaskRun, Thread,
@@ -2078,20 +2134,73 @@ Archer has four observable planes with different authority:
 4. **Diagnostics** explain operation, performance, lifecycle, and adapter
    failure. They are bounded, redacted, and non-authoritative.
 
-`@archer/core/diagnostics` defines a versioned product-neutral record:
+`@archer/core/diagnostics` distinguishes terminal span records from standalone
+events and owns accumulation before either reaches a sink:
 
 ```ts
-export type DiagnosticRecord = Readonly<{
+export type DiagnosticRecord = DiagnosticSpanRecord | DiagnosticEventRecord;
+
+export type DiagnosticRecordBase = Readonly<{
   schema: 1;
   name: string;
   severity: 'debug' | 'info' | 'warn' | 'error';
   at: Timestamp;
   component: string;
-  phase: 'start' | 'finish' | 'point';
-  outcome?: string;
-  durationMs?: number;
   correlation: DiagnosticCorrelation;
   attributes: JsonObject;
+}>;
+
+export type DiagnosticSpanRecord = DiagnosticRecordBase &
+  Readonly<{
+    kind: 'span';
+    spanId: UuidV4;
+    parentSpanId?: UuidV4;
+    startedAt: Timestamp;
+    durationMs: number;
+    settlement: DiagnosticSpanSettlement;
+    enrichment: DiagnosticSpanEnrichmentEvidence;
+  }>;
+
+export type DiagnosticEventRecord = DiagnosticRecordBase &
+  Readonly<{
+    kind: 'event';
+    outcome?: string;
+    error?: PublicError;
+  }>;
+
+export interface DiagnosticSpan {
+  readonly spanId: UuidV4;
+  readonly state: 'open' | 'completed' | 'failed' | 'abandoned';
+  enrich(namespace: string, attributes: JsonObject): Result<void, DiagnosticSpanError>;
+  complete(input: DiagnosticSpanCompletion): Result<DiagnosticSpanRecord, DiagnosticSpanError>;
+  fail(input: DiagnosticSpanFailure): Result<DiagnosticSpanRecord, DiagnosticSpanError>;
+  abandon(input: DiagnosticSpanAbandonment): Result<DiagnosticSpanRecord, DiagnosticSpanError>;
+}
+
+export interface DiagnosticHub extends Diagnostics {
+  beginSpan(input: DiagnosticSpanInput): DiagnosticSpan;
+  event(input: DiagnosticEventInput): DiagnosticEventRecord;
+  emit(record: DiagnosticRecord): void;
+}
+
+export type DiagnosticSpanSettlement =
+  | Readonly<{ kind: 'completed'; outcome: string }>
+  | Readonly<{ kind: 'failed'; outcome: string; error: PublicError }>
+  | Readonly<{ kind: 'abandoned'; reason: string }>;
+
+export type DiagnosticSpanEnrichmentEvidence = Readonly<{
+  acceptedUpdates: number;
+  rejectedUpdates: number;
+  rejectedBytes: CanonicalDecimal;
+}>;
+
+export type DiagnosticEventInput = Readonly<{
+  name: string;
+  severity: DiagnosticSeverity;
+  component: string;
+  correlation: DiagnosticCorrelation;
+  attributes: JsonObject;
+  outcome?: string;
   error?: PublicError;
 }>;
 
@@ -2114,6 +2223,26 @@ export interface Diagnostics extends OwnedHandle<DiagnosticsCloseEvidence> {
   ): OwnedHandle<DiagnosticAttachmentCloseEvidence>;
 }
 ```
+
+A DiagnosticSpan begins with hub-owned UUIDv4 identity, wall time, and
+monotonic time. Enrichment validates, copies, and freezes one named context
+namespace without emitting a record. Repeating a namespace replaces that
+namespace atomically. The span defaults to at most 64 namespaces and 64 KiB of
+encoded attributes; a low-level host may override them with positive safe
+integers.
+Optional starting context is admitted atomically; context over either bound is
+refused without preventing the span from observing work. A refused update
+preserves prior context and increments terminal loss evidence.
+Completed, failed, and abandoned settlement are mutually exclusive and emit
+exactly one terminal record. Repeated settlement returns a focused
+`DiagnosticSpanError` and emits nothing. Runtime-invalid settlement input also
+returns a focused `Result` error and preserves the open state.
+
+`withDiagnosticSpan()` supplies the managed path. It returns or throws the
+exact domain result while independently settling the span. Explicit span
+propagation is canonical. Node `AsyncLocalStorage` and OpenTelemetry context
+may wrap it inside adapters but do not own Archer correlation or imply that
+context survived a queue, sandbox, transport, or durable wake.
 
 Correlation may include task, Thread, Turn, Cell, effect, attempt, model
 request, invocation, sandbox, materialized view, Workspace, ResourceSet, and
@@ -2141,22 +2270,31 @@ Every managed TaskRun exposes a correlation-filtered view of that dispatcher
 through `run.diagnostics`. The run snapshot derives operating status from the
 task runtime and durable records, not from log output. Low-level applications
 may retain the full `Diagnostics` handle and attach any number of sinks.
-Pure Programs do not emit diagnostics. The effect shell records their
-acknowledgement, activation, attempt, settlement, and recovery phases.
+Pure Programs do not emit diagnostics. The effect shell opens spans around
+activation, attempts, settlement, and recovery. It enriches those spans as
+facts become available and settles them without changing Program outcomes.
 
 ### Logs
 
 Pino is Archer's first-party Node logger, not a third-party example left to the
-application. `@archer/observability/pino` maps normalized records to structured
-JSON, child correlation bindings, filters, and redaction. The managed local
-preset attaches it at `info` level to an asynchronous stderr destination. An
-application can configure the level and destination, supply a Pino instance,
-attach additional sinks, replace the logger, or explicitly disable log output.
-Disabling output does not disable diagnostic production or
-`TaskRun.diagnostics`.
+application. `@archer/observability/pino` maps terminal span records and
+standalone event records to structured JSON, child correlation bindings,
+filters, and redaction. It does not receive span enrichments or manufacture
+start and finish breadcrumbs. The managed local preset attaches it at `info`
+level to an asynchronous stderr destination. An application can configure the
+level and destination, supply a Pino instance, attach additional sinks, replace
+the logger, or explicitly disable log output. Disabling output does not disable
+diagnostic production or `TaskRun.diagnostics`.
+
+The adapter makes one level-selected Pino call per DiagnosticRecord. It keeps
+the complete normalized record under an `archer` field and uses the record name
+as the log message. Pino envelope time records sink ingestion. Archer's `at`,
+`startedAt`, and `durationMs` fields remain the operation timing evidence.
 
 Pino-specific transports and formatters remain behind that subpath. Pino's own
 types do not enter `TaskRun`, `Diagnostics`, or another contract declaration.
+The adapter-specific constructor may accept a Pino logger or destination
+because selecting that subpath is the explicit product boundary.
 Pino's own documentation recommends moving log transformation and transmission
 to a worker thread or separate process, which matches Archer's isolated sink
 model: [Pino transports](https://github.com/pinojs/pino/blob/main/docs/transports.md).
@@ -2164,15 +2302,37 @@ model: [Pino transports](https://github.com/pinojs/pino/blob/main/docs/transport
 `tslog` is not a v1 dependency. It may implement `DiagnosticSink`, but Archer
 does not need a second logger abstraction inside its contracts. Logs are a
 projection of diagnostics, not the source of diagnostic or durable meaning.
+Direct Pino imports outside `@archer/observability/pino` are a repository lint
+error. Domain packages begin DiagnosticSpans or emit explicit DiagnosticEvents.
 
 ### Metrics and traces
 
-`@archer/observability/opentelemetry` translates named lifecycle and diagnostic
-events into metrics and spans. It never exports OpenTelemetry SDK types through
-an Archer contract. The JavaScript implementation currently treats traces and
-metrics as stable while its log signal remains less mature, which reinforces
-the split between Pino logs and OpenTelemetry traces and metrics:
+`@archer/observability/opentelemetry` translates terminal DiagnosticSpanRecords
+and named DiagnosticEvents into metrics and spans. OpenTelemetry SDK types do
+not enter a product-neutral Archer contract. The adapter-specific constructor
+may accept API `Tracer` and `Meter` values. The JavaScript implementation
+currently treats traces and metrics as stable while its log signal remains less
+mature, which reinforces the split between Pino logs and OpenTelemetry traces
+and metrics:
 [OpenTelemetry JavaScript](https://opentelemetry.io/docs/languages/js/).
+
+The sink creates completed OpenTelemetry spans from terminal records. It uses
+`startedAt` plus monotonic `durationMs` for span timing and retains `at` as an
+attribute. It never fabricates an OpenTelemetry context from an Archer UUID.
+Because children normally settle before parents, the adapter keeps a bounded
+pending graph. Once a root or previously projected parent becomes available,
+it projects the parent before retained descendants using the real SDK
+SpanContext. At the pending bound, flush, or close, an unresolved child becomes
+a root span with its Archer parent UUID and
+`archer.parent_resolution = "missing"`. This may lose hierarchy fidelity but
+never the diagnostic record. Standalone events become zero-duration spans at
+`at`.
+
+The adapter emits only bounded metric dimensions. Record name, component,
+severity, settlement kind, outcome, and public error code are allowed. Archer
+correlation IDs, span IDs, namespace names, and context values are forbidden as
+metric labels. Namespaced context becomes one JSON string attribute per
+namespace rather than an unbounded flattened key set.
 
 Metrics cover acknowledgements, activation queue time, attempts, fences,
 provider latency and usage, approval wait, tool duration, sandbox acquisition,
@@ -2484,9 +2644,10 @@ managed demo:
 1. **Core, reactive state, and diagnostics.** Publish common codecs, Program,
    lifecycle and ownership values, `LiveState`, distinct replayable and
    transient streams, atomic live attachment, `LiveOperation`, internal RxJS
-   sharing, DiagnosticRecord, the per-sink diagnostic hub, the first-party Pino
-   sink, deterministic temporal fixtures, the generic React binding,
-   declaration-leak checks, and conformance.
+   sharing, explicit bounded DiagnosticSpans, terminal and point
+   DiagnosticRecords, the per-sink diagnostic hub, the first-party Pino sink,
+   deterministic temporal fixtures, the generic React binding,
+   declaration-leak checks, conformance, and the root core reactive-job example.
 2. **Immutable files.** Build path codecs, blob and tree formats, filesystem
    stores, canonical hashing, and file fault cases before resources, Git, and
    sandboxes can invent separate formats.
@@ -2572,7 +2733,7 @@ wire details to focused construction work:
   ordering, entry kinds, and collision policy are settled;
 - default queue sizes and slow-consumer thresholds for each adapter, while
   bounded delivery and explicit loss are settled;
-- exact diagnostic event names and OpenTelemetry span links, while the
+- exact diagnostic span and event names and OpenTelemetry span links, while the
   product-neutral schema, Pino choice, signal split, and non-interference are
   settled;
 - default context compaction thresholds and Scratchpad quotas, while their
