@@ -6,6 +6,7 @@
 import type { ComponentRef, OwnedHandle } from '../ownership.js';
 import { toPublicError, type PublicError } from '../protocol.js';
 import type { DeliveryBounds } from '../stream/contracts.js';
+import { createUuidV4 } from '../values.js';
 import {
   asTransientEventStream,
   createTransientEventSource,
@@ -15,30 +16,30 @@ import {
 import type {
   DiagnosticAttachOptions,
   DiagnosticAttachmentCloseEvidence,
+  DiagnosticEventInput,
+  DiagnosticEventRecord,
   DiagnosticFilter,
+  DiagnosticHub,
   DiagnosticRecord,
-  DiagnosticRecordInput,
   DiagnosticSeverity,
   DiagnosticSink,
-  Diagnostics,
   DiagnosticsCloseEvidence,
+  DiagnosticSpan,
+  DiagnosticSpanLimits,
 } from './contracts.js';
-import { DiagnosticRecordSchema } from './contracts.js';
+import {
+  DiagnosticEventInputSchema,
+  DiagnosticEventRecordSchema,
+  DiagnosticRecordSchema,
+  DiagnosticSpanError,
+} from './contracts.js';
+import { createDiagnosticSpan, type DiagnosticSpanIdFactory, type DiagnosticSpanMonotonicClock } from './span.js';
 
 /** Provides deterministic time for diagnostic construction. */
 export type DiagnosticClock = () => Date;
 
 /** Produces one deterministic shutdown-expiration signal after a duration. */
 export type DiagnosticShutdownTimer = (milliseconds: number) => Promise<void>;
-
-/** Adds non-blocking record production to the public diagnostics owner. */
-export interface DiagnosticHub extends Diagnostics {
-  /** Admits one already-normalized record without awaiting any sink. */
-  emit(record: DiagnosticRecord): void;
-
-  /** Creates and admits one record at the hub's injected current instant. */
-  record(input: DiagnosticRecordInput): DiagnosticRecord;
-}
 
 /** Configures dispatcher identity, scheduling, time, and default sink bounds. */
 export type DiagnosticsOptions = Readonly<{
@@ -50,6 +51,15 @@ export type DiagnosticsOptions = Readonly<{
 
   /** Supplies deterministic current time for created and synthesized records. */
   now?: DiagnosticClock;
+
+  /** Supplies monotonic milliseconds for exact diagnostic span duration. */
+  monotonicNow?: DiagnosticSpanMonotonicClock;
+
+  /** Supplies UUIDv4 process-local span identity without ambient randomness in tests. */
+  createSpanId?: DiagnosticSpanIdFactory;
+
+  /** Overrides the safe finite context budget shared by spans from this hub. */
+  spanLimits?: Partial<DiagnosticSpanLimits>;
 
   /** Schedules sink work outside the producer's call stack. */
   schedule?: ScheduleTask;
@@ -157,16 +167,23 @@ function normalizeFilter(filter: DiagnosticFilter | undefined): DiagnosticFilter
 }
 
 /**
- * Creates one immutable record through the same runtime codec used at boundaries.
- * @param input - Product-neutral fields other than schema and observation time.
- * @param now - Injected clock read exactly once for this record.
- * @returns A normalized deeply immutable diagnostic record.
+ * Creates one immutable event through the same runtime codec used at boundaries.
+ * @param input - Product-neutral fields other than source-owned kind, schema, and time.
+ * @param now - Injected clock read exactly once for this event.
+ * @returns A normalized deeply immutable diagnostic event.
  */
-export function createDiagnosticRecord(
-  input: DiagnosticRecordInput,
+export function createDiagnosticEvent(
+  input: DiagnosticEventInput,
   now: DiagnosticClock = () => new Date(),
-): DiagnosticRecord {
-  return DiagnosticRecordSchema.parse({ ...input, schema: 1, at: now().toISOString() });
+): DiagnosticEventRecord {
+  /** Rejects unexpected caller fields before attaching source-owned values. */
+  const admitted = DiagnosticEventInputSchema.parse(input);
+  return DiagnosticEventRecordSchema.parse({
+    ...admitted,
+    schema: 1,
+    kind: 'event',
+    at: now().toISOString(),
+  });
 }
 
 /** Mutable queue entry retained by one sink attachment. */
@@ -212,7 +229,7 @@ class SinkAttachment implements OwnedHandle<DiagnosticAttachmentCloseEvidence> {
   readonly #schedule: ScheduleTask;
 
   /** Builds deterministic gap and failure records. */
-  readonly #record: (input: DiagnosticRecordInput) => DiagnosticRecord;
+  readonly #record: (input: DiagnosticEventInput) => DiagnosticEventRecord;
 
   /** Reports sink failure through public events and other healthy sinks. */
   readonly #reportFailure: AttachmentFailureReporter;
@@ -309,7 +326,7 @@ class SinkAttachment implements OwnedHandle<DiagnosticAttachmentCloseEvidence> {
     maximum: Required<DeliveryBounds>,
     gapComponentLimit: number,
     schedule: ScheduleTask,
-    record: (input: DiagnosticRecordInput) => DiagnosticRecord,
+    record: (input: DiagnosticEventInput) => DiagnosticEventRecord,
     reportFailure: AttachmentFailureReporter,
     remove: () => void,
     shutdownDeadline: () => ShutdownDeadline,
@@ -532,7 +549,6 @@ class SinkAttachment implements OwnedHandle<DiagnosticAttachmentCloseEvidence> {
       name: 'diagnostics.gap',
       severity: 'warn',
       component: 'core.diagnostics',
-      phase: 'point',
       correlation: {},
       attributes: {
         lostItems: this.#pendingLostRecords,
@@ -683,6 +699,15 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
    */
   const now = options.now ?? (() => new Date());
 
+  /**
+   * Supplies process-monotonic elapsed readings without exposing them in records.
+   * @returns The current host monotonic millisecond reading.
+   */
+  const monotonicNow = options.monotonicNow ?? (() => performance.now());
+
+  /** Supplies UUIDv4 process-local diagnostic identity. */
+  const createSpanId = options.createSpanId ?? createUuidV4;
+
   /** Defers destination work outside record admission. */
   const schedule = options.schedule ?? defaultSchedule;
 
@@ -722,7 +747,7 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
     source: options.source ?? 'diagnostics',
     epoch: options.epoch ?? globalThis.crypto.randomUUID(),
     eventEncoding: Object.freeze({
-      revision: 'diagnostic-record/1',
+      revision: 'diagnostic-record/2',
       /**
        * Revalidates and owns each diagnostic before transient fan-out.
        * @param diagnostic - Normalized record offered to the public event plane.
@@ -761,8 +786,25 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
     throw new RangeError('gapComponentLimit must be a positive safe integer');
   }
 
+  /** Applies finite defaults before any span begins accumulating context. */
+  const spanLimits: DiagnosticSpanLimits = Object.freeze({
+    maxNamespaces: options.spanLimits?.maxNamespaces ?? 64,
+    maxAttributeBytes: options.spanLimits?.maxAttributeBytes ?? 64 * 1024,
+  });
+  if (
+    !Number.isSafeInteger(spanLimits.maxNamespaces) ||
+    spanLimits.maxNamespaces < 1 ||
+    !Number.isSafeInteger(spanLimits.maxAttributeBytes) ||
+    spanLimits.maxAttributeBytes < 1
+  ) {
+    throw new RangeError('Diagnostic span limits must be positive safe integers');
+  }
+
   /** Retains currently accepting sink attachments. */
   const attachments = new Set<SinkAttachment>();
+
+  /** Retains open process-local spans so orderly shutdown can abandon them honestly. */
+  const openSpans = new Set<DiagnosticSpan>();
 
   /** Prevents admission and new attachments after hub shutdown begins. */
   let closing = false;
@@ -782,7 +824,7 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
    * @param input - Product-neutral record fields supplied by a component.
    * @returns A normalized record at the injected current instant.
    */
-  const record = (input: DiagnosticRecordInput): DiagnosticRecord => createDiagnosticRecord(input, now);
+  const event = (input: DiagnosticEventInput): DiagnosticEventRecord => createDiagnosticEvent(input, now);
 
   /**
    * Admits a record to public observation and all healthy sink queues.
@@ -808,11 +850,10 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
    */
   const reportFailure: AttachmentFailureReporter = (attachment, failure, action) => {
     emit(
-      record({
+      event({
         name: 'diagnostics.sink_write_failed',
         severity: 'error',
         component: 'core.diagnostics',
-        phase: 'point',
         outcome: action,
         correlation: {},
         attributes: {},
@@ -834,15 +875,43 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
       emit(diagnostic);
     },
     /**
-     * Creates and admits one diagnostic using the hub clock.
-     * @param input - Record fields other than schema and observation time.
-     * @returns The exact admitted normalized record.
+     * Creates and admits one standalone event using the hub clock.
+     * @param input - Event fields other than source-owned schema, kind, and time.
+     * @returns The exact admitted normalized event.
      */
-    record(input) {
-      /** Creates one record so caller and sinks observe equivalent data. */
-      const diagnostic = record(input);
+    event(input) {
+      /** Creates one event so caller and sinks observe equivalent immutable data. */
+      const diagnostic = event(input);
       emit(diagnostic);
       return diagnostic;
+    },
+    /**
+     * Begins one bounded span and retains it for orderly hub abandonment.
+     * @param input - Stable identity, correlation, and initial namespaced context.
+     * @returns An open process-local span that emits only at settlement.
+     */
+    beginSpan(input) {
+      if (closing) {
+        throw new DiagnosticSpanError('diagnostic_span_hub_closed', 'Diagnostics cannot begin a span after close');
+      }
+      /** Captures the instance for removal when its terminal callback runs. */
+      const span: DiagnosticSpan = createDiagnosticSpan({
+        input,
+        limits: spanLimits,
+        now,
+        monotonicNow,
+        createSpanId,
+        /**
+         * Publishes one terminal record and releases the hub's open-span retention.
+         * @param diagnostic - Complete immutable record produced by span settlement.
+         */
+        onSettled(diagnostic) {
+          openSpans.delete(span);
+          emit(diagnostic);
+        },
+      });
+      openSpans.add(span);
+      return span;
     },
     /**
      * Attaches one independently bounded extension destination.
@@ -859,7 +928,7 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
         maximumDelivery,
         gapComponentLimit,
         schedule,
-        record,
+        event,
         reportFailure,
         () => attachments.delete(attachment),
         shutdownDeadline,
@@ -874,6 +943,15 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
      */
     close() {
       if (closePromise !== undefined) return closePromise;
+      /** Snapshots every open span before synchronous abandonment mutates the set. */
+      const spans = [...openSpans];
+      /** Counts only spans whose abandonment produced terminal evidence. */
+      let abandonedSpans = 0;
+      /** Settles each retained open span before diagnostic admission closes. */
+      for (const span of spans) {
+        if (span.abandon({ reason: 'diagnostics_shutdown' }).ok) abandonedSpans += 1;
+      }
+      openSpans.clear();
       closing = true;
       /** Snapshots current attachments before shutdown mutates membership. */
       const current = [...attachments];
@@ -886,7 +964,11 @@ export function createDiagnostics(options: DiagnosticsOptions = {}): DiagnosticH
       ])
         .then(() => {
           /** Shares one immutable close record through method and property access. */
-          const evidence: DiagnosticsCloseEvidence = Object.freeze({ kind: 'closed', attachments: current.length });
+          const evidence: DiagnosticsCloseEvidence = Object.freeze({
+            kind: 'closed',
+            attachments: current.length,
+            abandonedSpans,
+          });
           settleClosed?.(evidence);
           return evidence;
         })

@@ -304,8 +304,27 @@ authority or failure rules.
 
 ### DiagnosticRecord
 
-A normalized, redacted operational observation correlated with Archer work.
-It is not durable state, authority, retry evidence, or a task outcome.
+A normalized, redacted terminal DiagnosticSpan record or standalone
+DiagnosticEvent correlated with Archer work. It is not durable state,
+authority, retry evidence, or a task outcome.
+
+### DiagnosticSpan
+
+A process-local diagnostic lifecycle for one finite attempt or service hop. It
+accumulates admitted context and settles once as completed, failed, or
+abandoned.
+
+### DiagnosticSpanRecord
+
+The immutable terminal DiagnosticRecord emitted when a DiagnosticSpan settles.
+It contains the span identity, timing, settlement, accumulated context, and
+enrichment-loss evidence.
+
+### DiagnosticEvent
+
+A standalone DiagnosticRecord for an operational observation with no
+meaningful duration. It is not a breadcrumb emitted from inside a
+DiagnosticSpan.
 
 ### DiagnosticSink
 
@@ -315,5 +334,5 @@ telemetry transport. Its failure cannot change durable work.
 ### DiagnosticHub
 
 The retained producer and extension boundary for DiagnosticRecords. It fans
-records out without awaiting domain work and gives every attached sink an
-independent bounded, serialized queue.
+records out without awaiting domain work, begins DiagnosticSpans, and gives
+every attached sink an independent bounded, serialized queue.

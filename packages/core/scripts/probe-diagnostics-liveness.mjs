@@ -4,7 +4,7 @@
  */
 
 import { borrowed } from '../dist/ownership.js';
-import { createDiagnosticRecord, createDiagnostics } from '../dist/diagnostics/index.js';
+import { createDiagnosticEvent, createDiagnostics } from '../dist/diagnostics/index.js';
 
 /** Never settles, forcing dispatcher closure through its production deadline. */
 const never = new Promise(() => undefined);
@@ -39,11 +39,10 @@ const diagnostics = createDiagnostics({ shutdownTimeoutMs: 10 });
 /** Retains the attachment evidence independently of parent closure. */
 const attachment = diagnostics.attach(borrowed(sink));
 diagnostics.emit(
-  createDiagnosticRecord({
+  createDiagnosticEvent({
     name: 'probe.hung',
     severity: 'info',
     component: 'package-check',
-    phase: 'point',
     correlation: {},
     attributes: {},
   }),

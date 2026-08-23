@@ -7,13 +7,20 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   ProtocolFailureSchema,
+  UuidV4Schema,
   borrowed,
   owned,
+  type DiagnosticEventInput,
   type DiagnosticRecord,
-  type DiagnosticRecordInput,
   type DiagnosticSink,
 } from '../src/index.js';
-import { createDiagnosticRecord, createDiagnostics, DiagnosticRecordSchema } from '../src/diagnostics/index.js';
+import {
+  createDiagnosticEvent,
+  createDiagnostics,
+  DiagnosticRecordSchema,
+  DiagnosticSpanRecordSchema,
+  withDiagnosticSpan,
+} from '../src/diagnostics/index.js';
 import { deferred } from './temporal-fixtures.js';
 
 /** Immutable sink close evidence used by diagnostics ownership tests. */
@@ -62,12 +69,11 @@ function fixtureSink(
  * @returns A deterministic normalized point diagnostic.
  */
 function record(name: string): DiagnosticRecord {
-  return createDiagnosticRecord(
+  return createDiagnosticEvent(
     {
       name,
       severity: 'info',
       component: 'fixture',
-      phase: 'point',
       correlation: {},
       attributes: {},
     },
@@ -81,12 +87,11 @@ describe('DiagnosticRecord', () => {
     const attributes = { attempt: 1 };
 
     /** Builds one normalized record at an injected deterministic instant. */
-    const diagnostic = createDiagnosticRecord(
+    const diagnostic = createDiagnosticEvent(
       {
         name: 'operation.started',
         severity: 'debug',
         component: 'core.operation',
-        phase: 'start',
         correlation: {},
         attributes,
       },
@@ -96,11 +101,11 @@ describe('DiagnosticRecord', () => {
     attributes.attempt = 2;
     expect(diagnostic).toEqual({
       schema: 1,
+      kind: 'event',
       name: 'operation.started',
       severity: 'debug',
       at: '2026-08-22T01:02:03.004Z',
       component: 'core.operation',
-      phase: 'start',
       correlation: {},
       attributes: { attempt: 1 },
     });
@@ -109,28 +114,421 @@ describe('DiagnosticRecord', () => {
     expect(Object.isFrozen(diagnostic.attributes)).toBe(true);
   });
 
-  it('keeps schema and observation time under constructor ownership at runtime', () => {
-    /** Simulates untyped input carrying fields excluded by DiagnosticRecordInput. */
+  it('rejects caller-owned schema and observation time at the strict event-input boundary', () => {
+    /** Simulates untyped input carrying fields excluded by DiagnosticEventInput. */
     const hostile = {
       name: 'operation.started',
       severity: 'info',
       component: 'fixture',
-      phase: 'point',
       correlation: {},
       attributes: {},
       schema: 2,
       at: '1999-01-01T00:00:00.000Z',
-    } as unknown as DiagnosticRecordInput;
+    } as unknown as DiagnosticEventInput;
 
-    /** Constructs the record at the only trusted injected instant. */
-    const diagnostic = createDiagnosticRecord(hostile, () => new Date('2026-08-22T01:02:03.004Z'));
-
-    expect(diagnostic.schema).toBe(1);
-    expect(diagnostic.at).toBe('2026-08-22T01:02:03.004Z');
+    expect(() => createDiagnosticEvent(hostile, () => new Date('2026-08-22T01:02:03.004Z'))).toThrow(
+      expect.objectContaining({
+        issues: [
+          expect.objectContaining({
+            code: 'unrecognized_keys',
+            keys: ['schema', 'at'],
+          }),
+        ],
+      }),
+    );
   });
 });
 
 describe('Diagnostics', () => {
+  it('accumulates one explicit span and emits only its terminal wide record', async () => {
+    /** Supplies deterministic wall instants for span start and settlement. */
+    const wallInstants = [new Date('2026-08-22T01:00:00.000Z'), new Date('2026-08-22T01:00:00.250Z')];
+    /** Returns the next controlled wall instant without reading host time. */
+    const now = vi.fn(() => wallInstants.shift() ?? new Date('2026-08-22T01:00:00.250Z'));
+    /** Supplies deterministic monotonic readings independent of wall-clock adjustment. */
+    const monotonicReadings = [100, 137.5];
+    /** Returns the next controlled monotonic reading. */
+    const monotonicNow = vi.fn(() => monotonicReadings.shift() ?? 137.5);
+    /** Gives the span one stable source-owned UUIDv4. */
+    const spanId = '00000000-0000-4000-8000-000000000010';
+
+    /** Records every normalized value a future Pino sink would receive. */
+    const writes: DiagnosticRecord[] = [];
+    /** Accepts terminal records without adding destination behavior to the proof. */
+    const sink = fixtureSink(async (records) => {
+      writes.push(...records);
+    });
+
+    /** Supplies future span options through the current public factory boundary. */
+    const diagnostics = createDiagnostics({
+      now,
+      monotonicNow,
+      /**
+       * Returns this test's stable process-local span identity.
+       * @returns The deterministic UUIDv4 fixture.
+       */
+      createSpanId: () => spanId,
+    });
+    /** Retains the recording destination until duplicate settlement has been refused. */
+    const attachment = diagnostics.attach(borrowed(sink));
+
+    /** Begins one concrete model attempt with context known at admission. */
+    const span = diagnostics.beginSpan({
+      name: 'model.step',
+      component: 'models.ai-sdk',
+      correlation: { attemptId: UuidV4Schema.parse('00000000-0000-4000-8000-000000000011') },
+      attributes: { model: { provider: 'openai' } },
+    });
+
+    /** Remains caller-owned so the span must not retain its later mutation. */
+    const request = { toolCount: 2 };
+    expect(span.enrich('request', request)).toEqual({ ok: true, value: undefined });
+    request.toolCount = 99;
+    await Promise.resolve();
+    expect(writes).toEqual([]);
+
+    /** Settles the span once and therefore emits its one wide record. */
+    const completion = span.complete({ outcome: 'completed' });
+    expect(completion).toMatchObject({ ok: true, value: { kind: 'span' } });
+    /** Refuses a second terminal transition rather than emitting another record. */
+    expect(span.complete({ outcome: 'duplicated' })).toMatchObject({
+      ok: false,
+      error: { code: 'diagnostic_span_already_settled' },
+    });
+
+    await attachment.close();
+    expect(writes).toEqual([
+      {
+        schema: 1,
+        kind: 'span',
+        name: 'model.step',
+        severity: 'info',
+        at: '2026-08-22T01:00:00.250Z',
+        component: 'models.ai-sdk',
+        spanId,
+        startedAt: '2026-08-22T01:00:00.000Z',
+        durationMs: 37.5,
+        settlement: { kind: 'completed', outcome: 'completed' },
+        enrichment: { acceptedUpdates: 1, rejectedUpdates: 0, rejectedBytes: '0' },
+        correlation: { attemptId: '00000000-0000-4000-8000-000000000011' },
+        attributes: {
+          model: { provider: 'openai' },
+          request: { toolCount: 2 },
+        },
+      },
+    ]);
+    await diagnostics.close();
+  });
+
+  it('refuses over-budget enrichment without changing admitted span context', async () => {
+    /** Gives this focused span one deterministic identity and zero duration. */
+    const diagnostics = createDiagnostics({
+      /**
+       * Returns one stable wall instant for start and settlement.
+       * @returns The deterministic fixture instant.
+       */
+      now: () => new Date('2026-08-22T02:00:00.000Z'),
+      /**
+       * Returns one stable monotonic reading for a zero-duration span.
+       * @returns The deterministic monotonic millisecond value.
+       */
+      monotonicNow: () => 10,
+      /**
+       * Returns this test's stable span identity.
+       * @returns The deterministic UUIDv4 fixture.
+       */
+      createSpanId: () => '00000000-0000-4000-8000-000000000020',
+      spanLimits: { maxNamespaces: 1, maxAttributeBytes: 1024 },
+    });
+    /** Starts at the namespace limit with one valid source-owned context object. */
+    const span = diagnostics.beginSpan({
+      name: 'tool.invoke',
+      component: 'agent.tools',
+      correlation: {},
+      attributes: { tool: { name: 'read_file' } },
+    });
+
+    /** Proposes a valid second namespace so only the configured limit can refuse it. */
+    const refused = span.enrich('request', { pathCount: 2 });
+    expect(refused).toMatchObject({
+      ok: false,
+      error: {
+        code: 'diagnostic_span_enrichment_rejected',
+        details: { namespace: 'request', reason: 'namespace_limit' },
+      },
+    });
+    expect(span.state).toBe('open');
+
+    /** Replaces the existing namespace without expanding cardinality. */
+    expect(span.enrich('tool', { name: 'read_file', cache: 'miss' })).toEqual({ ok: true, value: undefined });
+    /** Earns the only terminal record after both update decisions. */
+    const completed = span.complete({ outcome: 'completed' });
+    expect(completed).toMatchObject({
+      ok: true,
+      value: {
+        attributes: { tool: { name: 'read_file', cache: 'miss' } },
+        enrichment: { acceptedUpdates: 1, rejectedUpdates: 1 },
+      },
+    });
+    if (!completed.ok) throw completed.error;
+    expect(BigInt(completed.value.enrichment.rejectedBytes)).toBeGreaterThan(0n);
+    expect(DiagnosticSpanRecordSchema.parse(completed.value)).toEqual(completed.value);
+
+    /** Refuses post-settlement enrichment without rewriting terminal evidence. */
+    expect(span.enrich('tool', { name: 'other' })).toMatchObject({
+      ok: false,
+      error: { code: 'diagnostic_span_already_settled' },
+    });
+    expect(completed.value.enrichment).toMatchObject({ acceptedUpdates: 1, rejectedUpdates: 1 });
+    await diagnostics.close();
+  });
+
+  it('refuses over-budget initial context without preventing observed work', async () => {
+    /** Retains a valid span even when its optional starting context exceeds policy. */
+    const diagnostics = createDiagnostics({
+      /**
+       * Returns one stable wall instant for start and settlement.
+       * @returns The deterministic fixture instant.
+       */
+      now: () => new Date('2026-08-22T02:30:00.000Z'),
+      /**
+       * Returns one stable monotonic reading for a zero-duration span.
+       * @returns The deterministic monotonic millisecond value.
+       */
+      monotonicNow: () => 15,
+      /**
+       * Returns this test's stable span identity.
+       * @returns The deterministic UUIDv4 fixture.
+       */
+      createSpanId: () => '00000000-0000-4000-8000-000000000025',
+      spanLimits: { maxNamespaces: 1, maxAttributeBytes: 128 },
+    });
+
+    /** Supplies two valid namespaces so policy, rather than schema shape, refuses admission. */
+    const span = diagnostics.beginSpan({
+      name: 'model.step',
+      component: 'models.ai-sdk',
+      correlation: {},
+      attributes: {
+        model: { provider: 'openai' },
+        request: { toolCount: 2 },
+      },
+    });
+    /** Settles ordinary work after the best-effort initial diagnostic context was refused. */
+    const completed = span.complete({ outcome: 'completed' });
+
+    expect(completed).toMatchObject({
+      ok: true,
+      value: {
+        attributes: {},
+        enrichment: { acceptedUpdates: 0, rejectedUpdates: 1 },
+      },
+    });
+    if (!completed.ok) throw completed.error;
+    expect(BigInt(completed.value.enrichment.rejectedBytes)).toBeGreaterThan(0n);
+    await diagnostics.close();
+  });
+
+  it('returns a focused Result when runtime settlement input is invalid', async () => {
+    /** Supplies distinct source-owned identities for each malformed command branch. */
+    const spanIds = [
+      '00000000-0000-4000-8000-000000000027',
+      '00000000-0000-4000-8000-000000000028',
+      '00000000-0000-4000-8000-000000000029',
+    ];
+    /** Owns deterministic spans whose states must survive malformed command data. */
+    const diagnostics = createDiagnostics({
+      /**
+       * Returns one stable wall instant for start and settlement.
+       * @returns The deterministic fixture instant.
+       */
+      now: () => new Date('2026-08-22T02:45:00.000Z'),
+      /**
+       * Returns one stable monotonic reading for a zero-duration span.
+       * @returns The deterministic monotonic millisecond value.
+       */
+      monotonicNow: () => 17,
+      /**
+       * Returns distinct stable identities for each validation branch.
+       * @returns The next deterministic UUIDv4 fixture.
+       */
+      createSpanId: () => spanIds.shift() ?? '00000000-0000-4000-8000-00000000002a',
+    });
+    /** Begins valid work before an untyped transport supplies malformed settlement. */
+    const completionSpan = diagnostics.beginSpan({
+      name: 'fixture.validate.complete',
+      component: 'fixture',
+      correlation: {},
+    });
+    /** Simulates runtime input that bypassed TypeScript but not the behavior boundary. */
+    const malformedCompletion = { outcome: '' } as Parameters<typeof completionSpan.complete>[0];
+
+    expect(completionSpan.complete(malformedCompletion)).toMatchObject({
+      ok: false,
+      error: { code: 'diagnostic_span_settlement_rejected' },
+    });
+    expect(completionSpan.state).toBe('open');
+    expect(completionSpan.complete({ outcome: 'completed' })).toMatchObject({ ok: true });
+
+    /** Begins independent work so malformed failure cannot inherit prior settlement. */
+    const failureSpan = diagnostics.beginSpan({
+      name: 'fixture.validate.fail',
+      component: 'fixture',
+      correlation: {},
+    });
+    /** Omits the required public failure shape at an untyped runtime boundary. */
+    const malformedFailure = { outcome: 'failed', error: {} } as Parameters<typeof failureSpan.fail>[0];
+    expect(failureSpan.fail(malformedFailure)).toMatchObject({
+      ok: false,
+      error: { code: 'diagnostic_span_settlement_rejected' },
+    });
+    expect(failureSpan.state).toBe('open');
+
+    /** Begins independent work so malformed abandonment has its own preserved state. */
+    const abandonmentSpan = diagnostics.beginSpan({
+      name: 'fixture.validate.abandon',
+      component: 'fixture',
+      correlation: {},
+    });
+    /** Supplies an empty reason that the runtime schema must refuse. */
+    const malformedAbandonment = { reason: '' } as Parameters<typeof abandonmentSpan.abandon>[0];
+    expect(abandonmentSpan.abandon(malformedAbandonment)).toMatchObject({
+      ok: false,
+      error: { code: 'diagnostic_span_settlement_rejected' },
+    });
+    expect(abandonmentSpan.state).toBe('open');
+    await diagnostics.close();
+  });
+
+  it('abandons every open span before orderly hub shutdown drains its sinks', async () => {
+    /** Records the abandonment wide event delivered during hub shutdown. */
+    const writes: DiagnosticRecord[] = [];
+    /** Accepts the shutdown record without adding destination timing. */
+    const sink = fixtureSink(async (records) => {
+      writes.push(...records);
+    });
+    /** Uses one fixed clock because start and abandonment share this test instant. */
+    const diagnostics = createDiagnostics({
+      /**
+       * Returns one stable wall instant for start and abandonment.
+       * @returns The deterministic fixture instant.
+       */
+      now: () => new Date('2026-08-22T03:00:00.000Z'),
+      /**
+       * Returns one stable monotonic reading for a zero-duration span.
+       * @returns The deterministic monotonic millisecond value.
+       */
+      monotonicNow: () => 20,
+      /**
+       * Returns this test's stable span identity.
+       * @returns The deterministic UUIDv4 fixture.
+       */
+      createSpanId: () => '00000000-0000-4000-8000-000000000030',
+    });
+    diagnostics.attach(borrowed(sink));
+    /** Leaves one real production span open for parent-owned shutdown behavior. */
+    const span = diagnostics.beginSpan({
+      name: 'sandbox.execute',
+      component: 'sandbox.runtime',
+      correlation: {},
+      attributes: { sandbox: { backend: 'docker' } },
+    });
+
+    expect(await diagnostics.close()).toEqual({ kind: 'closed', attachments: 1, abandonedSpans: 1 });
+    expect(span.state).toBe('abandoned');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      kind: 'span',
+      settlement: { kind: 'abandoned', reason: 'diagnostics_shutdown' },
+      attributes: { sandbox: { backend: 'docker' } },
+    });
+    expect(span.complete({ outcome: 'late' })).toMatchObject({
+      ok: false,
+      error: { code: 'diagnostic_span_already_settled' },
+    });
+    expect(() =>
+      diagnostics.beginSpan({
+        name: 'late',
+        component: 'fixture',
+        correlation: {},
+      }),
+    ).toThrow(expect.objectContaining({ code: 'diagnostic_span_hub_closed' }));
+  });
+
+  it('observes managed work without replacing its value or thrown Error', async () => {
+    /** Supplies distinct deterministic identities to the successful and failed spans. */
+    const spanIds = ['00000000-0000-4000-8000-000000000040', '00000000-0000-4000-8000-000000000041'];
+    /** Records both automatically settled terminal span records. */
+    const writes: DiagnosticRecord[] = [];
+    /** Accepts managed-helper output without affecting callback settlement. */
+    const sink = fixtureSink(async (records) => {
+      writes.push(...records);
+    });
+    /** Owns deterministic host inputs for both helper invocations. */
+    const diagnostics = createDiagnostics({
+      /**
+       * Returns one stable wall instant for every helper transition.
+       * @returns The deterministic fixture instant.
+       */
+      now: () => new Date('2026-08-22T04:00:00.000Z'),
+      /**
+       * Returns one stable monotonic reading for zero-duration helper spans.
+       * @returns The deterministic monotonic millisecond value.
+       */
+      monotonicNow: () => 30,
+      /**
+       * Returns distinct deterministic identities for both helper spans.
+       * @returns The next UUIDv4 fixture.
+       */
+      createSpanId: () => spanIds.shift() ?? '00000000-0000-4000-8000-000000000042',
+    });
+    /** Retains the destination until both automatic terminal records drain. */
+    const attachment = diagnostics.attach(borrowed(sink));
+
+    /** Returns one application value whose identity the observer must preserve. */
+    const value = Object.freeze({ answer: 42 });
+    /** Exercises automatic success while adding context through the explicit span. */
+    const observed = await withDiagnosticSpan(
+      diagnostics,
+      { name: 'fixture.success', component: 'fixture', correlation: {} },
+      (span) => {
+        span.enrich('result', { kind: 'answer' });
+        return value;
+      },
+    );
+    expect(observed).toBe(value);
+
+    /** Carries private detail that must stay out of the diagnostic record. */
+    const exactError = new Error('private callback detail');
+    /** Exercises automatic failure and exact Error identity preservation. */
+    await expect(
+      withDiagnosticSpan(
+        diagnostics,
+        { name: 'fixture.failure', component: 'fixture', correlation: {} },
+        () => {
+          throw exactError;
+        },
+        { code: 'fixture_failed', message: 'Fixture work failed' },
+      ),
+    ).rejects.toBe(exactError);
+
+    await attachment.close();
+    expect(writes.map((item) => (item.kind === 'span' ? item.settlement.kind : item.kind))).toEqual([
+      'completed',
+      'failed',
+    ]);
+    expect(writes[1]).toMatchObject({
+      kind: 'span',
+      settlement: {
+        kind: 'failed',
+        outcome: 'failed',
+        error: { code: 'fixture_failed', message: 'Fixture work failed' },
+      },
+    });
+    expect(JSON.stringify(writes)).not.toContain('private callback detail');
+    await diagnostics.close();
+  });
+
   it('does not await a slow sink and preserves independent serialized delivery', async () => {
     /** Holds the slow sink's first write open while another sink advances. */
     const releaseSlow = deferred<void>();
@@ -291,21 +689,19 @@ describe('Diagnostics', () => {
     await Promise.resolve();
     diagnostics.emit(record('queued'));
     diagnostics.emit(
-      createDiagnosticRecord({
+      createDiagnosticEvent({
         name: 'lost-a',
         severity: 'warn',
         component: 'component-a',
-        phase: 'point',
         correlation: {},
         attributes: {},
       }),
     );
     diagnostics.emit(
-      createDiagnosticRecord({
+      createDiagnosticEvent({
         name: 'lost-b',
         severity: 'error',
         component: 'component-b',
-        phase: 'point',
         correlation: {},
         attributes: {},
       }),
@@ -377,7 +773,9 @@ describe('Diagnostics', () => {
     expect(write.mock.calls.map(([records]) => records[0]?.name)).toEqual(['one', 'two']);
     expect(await attachment.closed).toMatchObject({ kind: 'sink-failed' });
     await observerAttachment.close();
-    expect(observed.find((item) => item.name === 'diagnostics.sink_write_failed')?.outcome).toBe('continued');
+    /** Narrows the failure observation to its standalone event class. */
+    const failure = observed.find((item) => item.name === 'diagnostics.sink_write_failed');
+    expect(failure?.kind === 'event' ? failure.outcome : undefined).toBe('continued');
     await diagnostics.close();
   });
 
@@ -486,7 +884,7 @@ describe('Diagnostics', () => {
     const closing = diagnostics.close();
     timeout.resolve();
 
-    await expect(closing).resolves.toEqual({ kind: 'closed', attachments: 1 });
+    await expect(closing).resolves.toEqual({ kind: 'closed', attachments: 1, abandonedSpans: 0 });
     expect(await attachment.closed).toMatchObject({
       kind: 'sink-failed',
       failure: { code: 'diagnostic_sink_shutdown_timeout' },

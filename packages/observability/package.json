@@ -1,0 +1,54 @@
+{
+  "name": "@archer/observability",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./pino": {
+      "types": "./dist/pino/index.d.ts",
+      "import": "./dist/pino/index.js"
+    },
+    "./opentelemetry": {
+      "types": "./dist/opentelemetry/index.d.ts",
+      "import": "./dist/opentelemetry/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=26.7.0 <27"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src test",
+    "test": "vitest run --reporter=verbose",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@archer/core": "workspace:*",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@archer/eslint": "workspace:*",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/sdk-metrics": "^2.10.0",
+    "@opentelemetry/sdk-trace-base": "^2.10.0",
+    "@types/node": "^26.2.0",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.1"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
+  }
+}

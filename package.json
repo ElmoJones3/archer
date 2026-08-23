@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "turbo run build",
+    "example:core": "pnpm --filter @archer/example-core-reactive-job-runner... build && pnpm --filter @archer/example-core-reactive-job-runner demo",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
     "lint": "turbo run lint",

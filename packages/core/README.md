@@ -206,9 +206,46 @@ close-evidence, and source-literal types continue to infer.
 ## Diagnostics
 
 `createDiagnostics()` returns a retained hub with a public transient event
-stream and explicit `owned()` or `borrowed()` sink attachment. Each sink has an
-independent bounded queue. Writes are serialized per sink, never retried
-implicitly, and cannot block diagnostic producers or change domain work.
+stream, explicit span accumulation, and `owned()` or `borrowed()` sink
+attachment. Concrete process-local work begins a `DiagnosticSpan`, enriches
+package-owned context without emitting, and settles once as completed, failed,
+or abandoned. Settlement emits one immutable wide record:
+
+```ts
+import { createDiagnostics, withDiagnosticSpan } from '@archer/core/diagnostics';
+
+const diagnostics = createDiagnostics();
+
+const answer = await withDiagnosticSpan(
+  diagnostics,
+  {
+    name: 'model.step',
+    component: 'example.model',
+    correlation: {},
+    attributes: { model: { provider: 'example', family: 'reasoning' } },
+  },
+  async (span) => {
+    span.enrich('request', { toolCount: 3 });
+    const value = await Promise.resolve(42);
+    span.enrich('response', { resultKind: 'answer' });
+    return value;
+  },
+);
+
+await diagnostics.close();
+```
+
+`withDiagnosticSpan()` preserves the callback's exact value or thrown Error.
+Direct span methods return Archer `Result` values for expected enrichment and
+settlement refusals. Valid starting context that exceeds configured bounds is
+refused atomically and counted in the terminal record rather than preventing
+the operation. Spans default to 64 context namespaces and 64 KiB of encoded
+attributes. Standalone `diagnostics.event()` records are reserved for useful
+observations with no meaningful duration, not function-entry narration.
+
+Each sink has an independent bounded queue. Writes are serialized per sink,
+never retried implicitly, and cannot block diagnostic producers or change
+domain work.
 
 Diagnostic sink queues default to 1,024 records and 4 MiB. Overflow is reported
 through a cardinality-bounded `diagnostics.gap` record with exact total items,
@@ -221,7 +258,9 @@ timeout-unconfirmed records and bytes.
 The hub is the product-neutral source of operational observations. Pino,
 OpenTelemetry, Datadog, Prometheus, and ELK integrations belong in
 `DiagnosticSink` adapters; logs and metrics are projections rather than hidden
-side channels.
+side channels. Archer packages produce `DiagnosticRecord` values and do not
+import Pino directly. The full policy is described in
+[`docs/logging-principles.md`](../../docs/logging-principles.md).
 
 ## Conformance
 

@@ -20,21 +20,23 @@ import { borrowed, owned, type OwnedHandle } from '../ownership.js';
 import { PublicErrorSchema, toPublicError, type PublicError } from '../protocol.js';
 import { Result, type Result as ResultValue } from '../result.js';
 import { createDeferredTask } from '../stream/testing.js';
-import { JsonObjectSchema, Sha256DigestSchema, TimestampSchema, type JsonObject } from '../values.js';
+import { JsonObjectSchema, Sha256DigestSchema, TimestampSchema, UuidV4Schema, type JsonObject } from '../values.js';
 import type {
   DiagnosticAttachmentCloseEvidence,
   DiagnosticRecord,
   DiagnosticSink,
   DiagnosticSinkCloseEvidence,
 } from './contracts.js';
-import { createDiagnosticRecord, createDiagnostics } from './hub.js';
+import { createDiagnosticEvent, createDiagnostics } from './hub.js';
 
 /** Selects the exact diagnostic report schema and required case set. */
-export const DIAGNOSTICS_CONFORMANCE_VERSION = '1.0.0';
+export const DIAGNOSTICS_CONFORMANCE_VERSION = '2.0.0';
 
 /** Stable identities of the required v1 diagnostic cases. */
 export type DiagnosticsConformanceCaseId =
   | 'record.normalization-redaction'
+  | 'span.accumulation-terminal-record'
+  | 'span.bounds-settlement-shutdown'
   | 'sink.independent-order-no-retry'
   | 'sink.failure-policy-accounting'
   | 'overflow.exact-bounds-cardinality'
@@ -55,7 +57,15 @@ export type DiagnosticsConformanceCase = Readonly<{
 export const DIAGNOSTICS_CONFORMANCE_CASES: readonly DiagnosticsConformanceCase[] = Object.freeze([
   Object.freeze({
     id: 'record.normalization-redaction',
-    claim: 'Records normalize time, own schema fields, freeze JSON data, and keep native errors out.',
+    claim: 'Standalone events normalize time, own schema fields, freeze JSON data, and keep native errors out.',
+  }),
+  Object.freeze({
+    id: 'span.accumulation-terminal-record',
+    claim: 'Span enrichment emits nothing and one terminal record owns timing, context, identity, and settlement.',
+  }),
+  Object.freeze({
+    id: 'span.bounds-settlement-shutdown',
+    claim: 'Span bounds preserve prior context, settlement is exclusive, and hub shutdown abandons open spans.',
   }),
   Object.freeze({
     id: 'sink.independent-order-no-retry',
@@ -85,8 +95,8 @@ export const DIAGNOSTICS_CONFORMANCE_CASES: readonly DiagnosticsConformanceCase[
 
 /** Public factory port implemented by one diagnostic runtime under test. */
 export type DiagnosticsConformanceTarget = Readonly<{
-  /** Constructs normalized diagnostic records. */
-  createDiagnosticRecord: typeof createDiagnosticRecord;
+  /** Constructs normalized standalone diagnostic events. */
+  createDiagnosticEvent: typeof createDiagnosticEvent;
 
   /** Constructs retained diagnostic dispatchers. */
   createDiagnostics: typeof createDiagnostics;
@@ -94,7 +104,7 @@ export type DiagnosticsConformanceTarget = Readonly<{
 
 /** First-party bounded dispatcher port exercised by Archer's own proof. */
 export const CORE_DIAGNOSTICS_CONFORMANCE_TARGET: DiagnosticsConformanceTarget = Object.freeze({
-  createDiagnosticRecord,
+  createDiagnosticEvent,
   createDiagnostics,
 });
 
@@ -171,6 +181,8 @@ export type PassingDiagnosticsConformance = DiagnosticsConformanceReport & Passi
 /** Validates the stable identity of every required diagnostic proof. */
 const DiagnosticsConformanceCaseIdSchema = z.enum([
   'record.normalization-redaction',
+  'span.accumulation-terminal-record',
+  'span.bounds-settlement-shutdown',
   'sink.independent-order-no-retry',
   'sink.failure-policy-accounting',
   'overflow.exact-bounds-cardinality',
@@ -285,12 +297,11 @@ function fixtureRecord(
   name: string,
   component = 'conformance',
 ): DiagnosticRecord {
-  return target.createDiagnosticRecord(
+  return target.createDiagnosticEvent(
     {
       name,
       severity: 'info',
       component,
-      phase: 'point',
       correlation: {},
       attributes: {},
     },
@@ -340,12 +351,11 @@ async function recordCase(target: DiagnosticsConformanceTarget): Promise<void> {
   /** Remains mutable after record construction to prove boundary ownership. */
   const attributes = { attempt: 1 };
   /** Constructs one record at a deterministic instant. */
-  const diagnostic = target.createDiagnosticRecord(
+  const diagnostic = target.createDiagnosticEvent(
     {
       name: 'conformance.record',
       severity: 'debug',
       component: 'conformance',
-      phase: 'point',
       correlation: {},
       attributes,
     },
@@ -359,22 +369,236 @@ async function recordCase(target: DiagnosticsConformanceTarget): Promise<void> {
   /** Records whether a native Error was correctly refused at the public data boundary. */
   let nativeErrorRejected = false;
   try {
-    target.createDiagnosticRecord(
+    target.createDiagnosticEvent(
       {
         name: 'conformance.native-error',
         severity: 'error',
         component: 'conformance',
-        phase: 'point',
         correlation: {},
         attributes: {},
         error: new Error('private native detail'),
-      } as unknown as Parameters<DiagnosticsConformanceTarget['createDiagnosticRecord']>[0],
+      } as unknown as Parameters<DiagnosticsConformanceTarget['createDiagnosticEvent']>[0],
       fixtureNow,
     );
   } catch {
     nativeErrorRejected = true;
   }
   invariant(nativeErrorRejected, 'Diagnostic record admitted a native Error graph');
+}
+
+/**
+ * Proves explicit accumulation, immutable context ownership, and one terminal emission.
+ * @param target - Diagnostic implementation under test.
+ */
+async function spanAccumulationCase(target: DiagnosticsConformanceTarget): Promise<void> {
+  /** Supplies exact start and settlement wall instants. */
+  const wallInstants = [new Date('2026-08-22T01:00:00.000Z'), new Date('2026-08-22T01:00:00.250Z')];
+  /**
+   * Returns controlled wall time without reading the conformance host clock.
+   * @returns The next deterministic wall instant.
+   */
+  const now = (): Date => wallInstants.shift() ?? new Date('2026-08-22T01:00:00.250Z');
+  /** Supplies exact monotonic readings independently of wall time. */
+  const monotonicReadings = [100, 137.5];
+  /**
+   * Returns the next deterministic elapsed-time reading.
+   * @returns The next monotonic millisecond value.
+   */
+  const monotonicNow = (): number => monotonicReadings.shift() ?? 137.5;
+  /** Gives this span one stable process-local identity. */
+  const spanId = '00000000-0000-4000-8000-000000000110';
+  /** Gives this span one stable explicit parent identity. */
+  const parentSpanId = UuidV4Schema.parse('00000000-0000-4000-8000-000000000111');
+  /** Gives correlation one valid durable attempt identity. */
+  const attemptId = UuidV4Schema.parse('00000000-0000-4000-8000-000000000112');
+  /** Retains every destination write for exact terminal cardinality. */
+  const written: DiagnosticRecord[] = [];
+  /** Records normalized terminal values without changing delivery behavior. */
+  const sink = fixtureSink(async (records) => {
+    written.push(...records);
+  });
+  /** Owns one deterministic runtime for this lifecycle proof. */
+  const diagnostics = target.createDiagnostics({
+    now,
+    monotonicNow,
+    /**
+     * Returns this case's stable process-local span identity.
+     * @returns The deterministic UUIDv4 fixture.
+     */
+    createSpanId: () => spanId,
+  });
+  /** Retains the destination until duplicate settlement is refused. */
+  const attachment = diagnostics.attach(borrowed(sink));
+  /** Remains caller-owned so admission must copy initial context. */
+  const model = { provider: 'openai' };
+  /** Begins one concrete process-local operation without emitting a breadcrumb. */
+  const span = diagnostics.beginSpan({
+    name: 'model.step',
+    component: 'models.ai-sdk',
+    correlation: { attemptId },
+    parentSpanId,
+    attributes: { model },
+  });
+  model.provider = 'mutated';
+  /** Remains caller-owned so enrichment must copy before later mutation. */
+  const response = { finishReason: 'stop' };
+  invariant(span.enrich('response', response).ok, 'Valid span enrichment was refused');
+  response.finishReason = 'mutated';
+  await Promise.resolve();
+  /** Snapshots pre-settlement cardinality without narrowing later asynchronous writes. */
+  const writesBeforeSettlement = written.length;
+  invariant(writesBeforeSettlement === 0, 'Span begin or enrichment emitted a breadcrumb record');
+
+  /** Earns one successful terminal record after observed work settles. */
+  const completed = span.complete({ outcome: 'completed' });
+  invariant(completed.ok, 'Open span refused valid completion');
+  invariant(span.state === 'completed', 'Span did not expose its earned terminal state');
+  /** Attempts a second settlement to prove at-most-once behavior. */
+  const duplicate = span.complete({ outcome: 'duplicate' });
+  invariant(!duplicate.ok, 'Terminal span admitted duplicate settlement');
+  invariant(
+    duplicate.error.code === 'diagnostic_span_already_settled',
+    'Duplicate settlement did not return the stable refusal code',
+  );
+  await attachment.close();
+
+  invariant(written.length === 1, 'Span emitted other than exactly one terminal record');
+  /** Reads the sole delivered value after proving terminal cardinality. */
+  const record = written[0];
+  invariant(record?.kind === 'span', 'Span settlement did not emit a terminal span record');
+  invariant(record.spanId === spanId && record.parentSpanId === parentSpanId, 'Span identity or parentage changed');
+  invariant(
+    record.startedAt === '2026-08-22T01:00:00.000Z' &&
+      record.at === '2026-08-22T01:00:00.250Z' &&
+      record.durationMs === 37.5,
+    'Span timing did not preserve wall and monotonic evidence',
+  );
+  invariant(record.settlement.kind === 'completed', 'Span terminal settlement was not successful');
+  invariant(
+    JSON.stringify(record.attributes.model) === '{"provider":"openai"}',
+    'Span retained mutated initial context',
+  );
+  invariant(
+    JSON.stringify(record.attributes.response) === '{"finishReason":"stop"}',
+    'Span retained mutated enrichment context',
+  );
+  invariant(
+    record.enrichment.acceptedUpdates === 1 && record.enrichment.rejectedUpdates === 0,
+    'Span enrichment evidence did not match accepted updates',
+  );
+  invariant(Object.isFrozen(record) && Object.isFrozen(record.attributes), 'Terminal span graph was not frozen');
+  await diagnostics.close();
+}
+
+/**
+ * Proves bounded context, exclusive failure settlement, and orderly abandonment.
+ * @param target - Diagnostic implementation under test.
+ */
+async function spanBoundsCase(target: DiagnosticsConformanceTarget): Promise<void> {
+  /** Supplies two stable span identities without ambient randomness. */
+  const spanIds = ['00000000-0000-4000-8000-000000000120', '00000000-0000-4000-8000-000000000121'];
+  /** Retains both terminal records through hub shutdown. */
+  const written: DiagnosticRecord[] = [];
+  /** Accepts terminal records without adding destination failure. */
+  const sink = fixtureSink(async (records) => {
+    written.push(...records);
+  });
+  /** Applies a one-namespace policy through deterministic host services. */
+  const diagnostics = target.createDiagnostics({
+    /**
+     * Returns one stable wall instant for every span transition.
+     * @returns The deterministic fixture instant.
+     */
+    now: () => new Date('2026-08-22T02:00:00.000Z'),
+    /**
+     * Returns one stable monotonic reading for zero-duration fixture spans.
+     * @returns The deterministic monotonic millisecond value.
+     */
+    monotonicNow: () => 200,
+    /**
+     * Returns distinct deterministic identities for the failed and abandoned spans.
+     * @returns The next UUIDv4 fixture.
+     */
+    createSpanId: () => spanIds.shift() ?? '00000000-0000-4000-8000-000000000122',
+    spanLimits: { maxNamespaces: 1, maxAttributeBytes: 512 },
+  });
+  /** Retains delivery through explicit failure and shutdown abandonment. */
+  diagnostics.attach(borrowed(sink));
+  /** Begins valid work with optional context that policy must refuse atomically. */
+  const failedSpan = diagnostics.beginSpan({
+    name: 'tool.invoke',
+    component: 'agent.tools',
+    correlation: {},
+    attributes: {
+      tool: { name: 'read_file' },
+      request: { pathCount: 2 },
+    },
+  });
+  invariant(failedSpan.enrich('tool', { name: 'read_file' }).ok, 'Span could not recover after initial refusal');
+  /** Exceeds the one-namespace policy without changing the admitted tool context. */
+  const refused = failedSpan.enrich('request', { pathCount: 2 });
+  invariant(!refused.ok, 'Over-budget span enrichment was admitted');
+  invariant(
+    refused.error.code === 'diagnostic_span_enrichment_rejected',
+    'Over-budget enrichment did not return the stable refusal code',
+  );
+  /** Simulates malformed runtime input reaching the behavior boundary. */
+  const malformed = failedSpan.complete({ outcome: '' });
+  invariant(!malformed.ok, 'Span admitted malformed runtime settlement input');
+  invariant(
+    malformed.error.code === 'diagnostic_span_settlement_rejected' && failedSpan.state === 'open',
+    'Malformed settlement did not preserve open state with a stable refusal',
+  );
+  /** Creates bounded public failure data before it can enter a terminal record. */
+  const failure = PublicErrorSchema.parse({
+    code: 'tool_failed',
+    message: 'Tool invocation failed',
+    retryable: false,
+  });
+  /** Earns exclusive failed settlement with previously admitted context intact. */
+  const failed = failedSpan.fail({ outcome: 'failed', error: failure });
+  invariant(failed.ok, 'Open span refused valid failure settlement');
+  invariant(
+    JSON.stringify(failed.value.attributes.tool) === '{"name":"read_file"}',
+    'Refusal changed previously admitted context',
+  );
+  invariant(Object.keys(failed.value.attributes).length === 1, 'Refusal partially admitted over-budget context');
+  invariant(
+    failed.value.enrichment.acceptedUpdates === 1 && failed.value.enrichment.rejectedUpdates === 2,
+    'Terminal record did not account for initial and later context refusals',
+  );
+  invariant(BigInt(failed.value.enrichment.rejectedBytes) > 0n, 'Terminal record omitted rejected byte evidence');
+  invariant(!failedSpan.abandon({ reason: 'duplicate' }).ok, 'Failed span admitted later abandonment');
+
+  /** Leaves one second span open so its owner must settle it during shutdown. */
+  const abandonedSpan = diagnostics.beginSpan({
+    name: 'sandbox.execute',
+    component: 'sandbox.runtime',
+    correlation: {},
+  });
+  /** Closes the owner and requires synchronous span abandonment before sink drain. */
+  const closeEvidence = await diagnostics.close();
+  invariant(closeEvidence.abandonedSpans === 1, 'Hub shutdown did not count its abandoned open span');
+  invariant(abandonedSpan.state === 'abandoned', 'Hub shutdown left an open span without terminal state');
+  invariant(written.length === 2, 'Failure and shutdown did not each emit one terminal span record');
+  invariant(
+    written[0]?.kind === 'span' && written[0].settlement.kind === 'failed',
+    'Explicit failure terminal record was missing or reordered',
+  );
+  invariant(
+    written[1]?.kind === 'span' &&
+      written[1].settlement.kind === 'abandoned' &&
+      written[1].settlement.reason === 'diagnostics_shutdown',
+    'Shutdown abandonment terminal record was missing or malformed',
+  );
+  /** Records whether closed ownership rejects new process-local work. */
+  let closedBeginRejected = false;
+  try {
+    diagnostics.beginSpan({ name: 'late', component: 'conformance', correlation: {} });
+  } catch (error) {
+    closedBeginRejected = error instanceof ArcherError && error.code === 'diagnostic_span_hub_closed';
+  }
+  invariant(closedBeginRejected, 'Closed diagnostics owner admitted a new span');
 }
 
 /**
@@ -458,7 +682,10 @@ async function failurePolicyCase(target: DiagnosticsConformanceTarget): Promise<
   );
   /** Finds the non-authoritative operational report emitted to healthy sinks. */
   const failure = observed.find((record) => record.name === 'diagnostics.sink_write_failed');
-  invariant(failure?.outcome === 'continued', 'Continue policy falsely reported destination detachment');
+  invariant(
+    failure?.kind === 'event' && failure.outcome === 'continued',
+    'Continue policy falsely reported destination detachment',
+  );
   invariant(!JSON.stringify(failure).includes('private continuing'), 'Failure projection leaked native sink detail');
   await diagnostics.close();
 }
@@ -721,11 +948,10 @@ async function nonInterferenceCase(target: DiagnosticsConformanceTarget): Promis
   const events = diagnostics.events.subscribe();
   /** Starts the pull before emission so delivery does not depend on queue scheduling. */
   const next = events[Symbol.asyncIterator]().next();
-  diagnostics.record({
+  diagnostics.event({
     name: 'runtime.attempt.started',
     severity: 'info',
     component: 'conformance.runtime',
-    phase: 'start',
     correlation: {},
     attributes: {},
   });
@@ -749,6 +975,8 @@ const executableCases: Readonly<
   Record<DiagnosticsConformanceCaseId, (target: DiagnosticsConformanceTarget) => Promise<void>>
 > = Object.freeze({
   'record.normalization-redaction': recordCase,
+  'span.accumulation-terminal-record': spanAccumulationCase,
+  'span.bounds-settlement-shutdown': spanBoundsCase,
   'sink.independent-order-no-retry': sinkCase,
   'sink.failure-policy-accounting': failurePolicyCase,
   'overflow.exact-bounds-cardinality': overflowCase,

@@ -14,19 +14,34 @@ export {
   type ValidationPathSegment,
 } from './errors.js';
 export { fromZod, type Codec } from './codec.js';
+export { DiagnosticSpanError } from './diagnostics/contracts.js';
 export type {
   DiagnosticAttachOptions,
   DiagnosticAttachmentCloseEvidence,
   DiagnosticCorrelation,
+  DiagnosticEventInput,
+  DiagnosticEventRecord,
   DiagnosticFilter,
-  DiagnosticPhase,
+  DiagnosticHub,
   DiagnosticRecord,
-  DiagnosticRecordInput,
+  DiagnosticRecordBase,
   DiagnosticSeverity,
   DiagnosticSink,
   DiagnosticSinkCloseEvidence,
   Diagnostics,
   DiagnosticsCloseEvidence,
+  DiagnosticSpan,
+  DiagnosticSpanAbandonment,
+  DiagnosticSpanAttributes,
+  DiagnosticSpanCompletion,
+  DiagnosticSpanEnrichmentEvidence,
+  DiagnosticSpanErrorCode,
+  DiagnosticSpanFailure,
+  DiagnosticSpanInput,
+  DiagnosticSpanLimits,
+  DiagnosticSpanRecord,
+  DiagnosticSpanSettlement,
+  DiagnosticSpanState,
 } from './diagnostics/contracts.js';
 export { ArcherObjectSchema, archerObjectSchema, type ArcherObject } from './object.js';
 export { borrowed, owned, type BorrowedRef, type ComponentRef, type OwnedHandle, type OwnedRef } from './ownership.js';
