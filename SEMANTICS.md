@@ -246,10 +246,22 @@ Ownership of the handle does not authorize an execution.
 
 ## Files and work
 
+### BlobRef
+
+A content reference to exact regular-file bytes identified by their raw
+SHA-256 digest and byte length. It carries no host path or mutable filesystem
+identity.
+
+### TreeRef
+
+A versioned content reference to the canonical root directory node that
+recursively identifies one complete immutable tree.
+
 ### Immutable tree
 
-A content-addressed logical hierarchy of files and directories whose identity
-does not depend on a sandbox, workspace adapter, or storage product.
+A content-addressed Merkle hierarchy of logical files and derived directories
+rooted at a `TreeRef`. Its identity does not depend on a sandbox, virtual
+filesystem, Workspace adapter, or storage product.
 
 ### Workspace
 
