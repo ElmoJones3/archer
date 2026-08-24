@@ -48,3 +48,33 @@ export {
   type TreeFileSource,
   type TreeStore,
 } from './store.js';
+export {
+  ChangeSetIdSchema,
+  IngestionReceiptIdSchema,
+  MaterializedViewIdSchema,
+  MaterializerIdSchema,
+  ScratchpadCheckpointIdSchema,
+  ScratchpadIdSchema,
+  WorkspaceIdSchema,
+  WorkspaceLineageIdSchema,
+  WorkspaceSnapshotIdSchema,
+  type ChangeSetId,
+  type IngestionReceiptId,
+  type MaterializedViewId,
+  type MaterializerId,
+  type ScratchpadCheckpointId,
+  type ScratchpadId,
+  type WorkspaceId,
+  type WorkspaceLineageId,
+  type WorkspaceSnapshotId,
+} from './work-values.js';
+export {
+  PhysicalIngestionReceiptSchema,
+  createPhysicalIngestionReceipt,
+  physicalIngestionReceiptEvidence,
+  type PhysicalIngestionReceipt,
+  type PhysicalIngestionReceiptInput,
+} from './ingestion.js';
+export * from './workspace/index.js';
+export * from './materializer/index.js';
+export * from './scratchpad/index.js';

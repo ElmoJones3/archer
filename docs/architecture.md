@@ -187,14 +187,16 @@ The following rules apply at every entry point:
     composition.
 19. **Ship proof with the port.** A replaceable contract is incomplete without
     codecs, required failure cases, and a versioned conformance suite.
-20. **Ship proof with the layer.** Every new or materially changed workflow
-    adds or updates a root `examples/<layer>/<scenario>` application. A
-    contained contract slice that cannot yet demonstrate a meaningful workflow
-    may ship a public conformance suite instead; its first real consumer must
-    exercise it in that consumer's example. Examples import only public package
-    entry points, state their dependency assumptions, exercise failure and
-    cleanup as well as success, and run in the repository's normal build, test,
-    and lint pipeline.
+20. **Ship a real application with the layer.** Every new or materially changed
+    workflow adds or updates a root `examples/<layer>/<scenario>` application. A
+    contained contract slice that cannot yet support useful work may ship a
+    public conformance suite instead; its first real consumer must use it in that
+    consumer's example. Examples import only public package entry points and run
+    in the repository's normal build, test, and lint pipeline. Their executable
+    path performs the named job through the real framework or service boundary.
+    Deterministic tests may inject dependency-owned test implementations, but may
+    not replace the executable with contract evidence or bypass framework-owned
+    dispatch. `examples/README.md` owns the complete delivery policy.
 
 ## Public values, interfaces, and classes
 
@@ -1132,26 +1134,54 @@ content identity, lineage, or promotion. This indirection is intentional: a
 storage implementation, a claim on content, and a workload's physical view are
 different responsibilities even when one local preset constructs all three.
 
+The public file layer must also fit applications that never adopt Archer's
+agent stack. Wave 4 therefore proves Workspace and Scratchpad handles through
+native Vercel AI SDK `tool()` definitions. Those tools speak in familiar
+project-file and private-notebook verbs while the host application supplies
+storage, current grants, retention, and later physical placement. The model
+cannot tell from its tool schema whether a later Materializer realizes the same
+logical content in memory, a directory, Docker, or a microVM. That is the point:
+examples humanize the contract without erasing the guarantees behind it.
+
+Host-to-Workspace import is also a disclosure boundary, not filesystem sugar.
+The code-editor example excludes common credentials, VCS data, dependencies,
+and generated trees by default, accepts caller include and additive ignore
+policy, and presents the complete admitted path set before invoking a model.
+Private Workspace writes protect the source directory; they do not make model
+read access private from the selected provider.
+
 ### Workspaces and Scratchpads
 
 A Workspace owns private mutable lineage. It starts from one immutable tree,
 accepts authorized and preconditioned edits or ingestion receipts, and may
 produce new private snapshots. Its interface supports reads, listings, diffs,
 preconditioned mutations including rename and delete, ingestion, and
-`createChangeSet`. Mutations carry an expected entry digest or Workspace
-generation so stale writers are explicit failures.
+`createChangeSet`. Public command paths are ergonomic strings; the runtime
+admits them into Archer's canonical `LogicalPath` grammar before authorization
+or storage. Add requires exact absence or generation. Modify, rename, and
+delete require an expected blob or Workspace generation, so stale writers are
+explicit refusals that preserve current state.
+
+`@archer/files/workspace` publishes the protocol, identity codecs, action
+definitions, and process-local reference without importing Materializer or Git
+behavior. The reference serializes state-sensitive methods, rechecks current
+Authority immediately before the action, enforces complete-tree file and byte
+quotas, hashes idempotency input without retaining plaintext in replay maps,
+and opens a best-effort wide diagnostic span around each mutation.
 
 `WorkspaceHandle` is a hot projection of acknowledged lineage, not a file
 watcher:
 
 ```ts
 export type WorkspaceSnapshot = Readonly<{
+  id: WorkspaceSnapshotId;
+  object: 'workspace-snapshot';
+  createdAt: Timestamp;
   workspaceId: WorkspaceId;
   lineageId: WorkspaceLineageId;
   tree: TreeRef;
   generation: number;
-  createdAt: Timestamp;
-  evidenceDigest: EvidenceDigest;
+  evidenceDigest: `sha256:${string}`;
 }>;
 
 export type WorkspaceHandleSnapshot = Readonly<{
@@ -1181,7 +1211,10 @@ export interface WorkspaceHandle
   list(request: WorkspaceListRequest, grant: GrantRef<WorkspaceReadAction>): Promise<WorkspaceListOutcome>;
   diff(request: WorkspaceDiffRequest, grant: GrantRef<WorkspaceReadAction>): Promise<WorkspaceDiffOutcome>;
   apply(command: WorkspaceMutation, grant: GrantRef<WorkspaceWriteAction>): Promise<WorkspaceMutationOutcome>;
-  acceptIngestion(receipt: IngestionReceipt, grant: GrantRef<WorkspaceWriteAction>): Promise<WorkspaceMutationOutcome>;
+  acceptIngestion(
+    command: WorkspaceIngestionCommand,
+    grant: GrantRef<WorkspaceIngestionAcceptAction>,
+  ): Promise<WorkspaceIngestionOutcome>;
   createChangeSet(input: ChangeSetRequest, grant: GrantRef<ChangeSetCreateAction>): Promise<ChangeSetOutcome>;
 }
 ```
@@ -1196,25 +1229,45 @@ in a physical view.
 
 Each successful mutation returns the prior and resulting generation and tree.
 Stale generation, stale entry digest, quota refusal, lineage mismatch, and
-authority refusal preserve the prior head and return tagged outcomes.
+authority refusal preserve the prior head and return tagged outcomes. Rejected
+add and modify candidates do not publish their unacknowledged bytes into the
+Workspace's store.
+
+Mutation outcomes are domain data, not exceptions. Exact idempotent replay
+returns the original acknowledged objects with `replayed: true`; reusing a key
+for different semantic input is an `idempotency-conflict`. Unexpected schema,
+store, or invariant failure remains an `Error`. This keeps Archer's
+`Result<T, Error>` rule intact without treating an expected stale writer as an
+exception.
 
 A Workspace has no promotion method. `createChangeSet` compares an accepted
 private result with the declared base and produces an immutable proposal. The
-operation list may describe add, modify, delete, mode change, and rename, with
-expected prior identities. The base tree and result tree remain authoritative;
-the operation list is a review aid, not a sandbox's unverified claim.
+operation list describes add, modify, delete, and an explicitly submitted
+rename. A diff does not infer rename merely because two paths share bytes. The
+base tree and result tree remain authoritative; the operation list is a review
+aid, not a sandbox's unverified claim. Wave 4 deliberately provides no Git
+adapter and no promotion service. Those later layers consume `ChangeSet`
+without becoming methods on the Workspace.
 
 A Scratchpad is another private mutable owner with different lifecycle rules.
-V1 supports:
+The public protocol names three retention classes:
 
-- `ephemeral`, deleted when its owning task or Turn closes;
-- `checkpointed`, snapshotted at explicit boundaries;
+- `ephemeral`, released without a recovery promise when its owner closes;
+- `checkpointed`, made recoverable only at explicit checkpoint boundaries;
 - `thread-durable`, recoverable with the Thread under configured quotas.
 
+The first process-local reference implements `ephemeral` and `checkpointed`.
+It does not accept `thread-durable`, because an in-memory replay buffer cannot
+prove recovery with a durable Thread. That mode remains a protocol contract for
+a later adapter that owns durable checkpoint facts and recovery.
+
 Scratchpads materialize outside the Workspace ingestion root. They never enter
-a ChangeSet by accident. An authorized import operation may copy named
+a ChangeSet by accident. A later authorized import operation may copy named
 immutable scratch content into a Workspace with normal preconditions. A
-Scratchpad has no resource admission or promotion authority.
+Scratchpad has no resource admission or promotion authority. The Wave 4
+reference accepts `{ type: 'task' | 'thread' | 'external'; id: UuidV4 }` as its
+owner, so an ordinary application session can use the layer before Task and
+Thread packages exist.
 
 Every Scratchpad handle exposes hot acknowledged summary state while its owner
 is alive. It never emits raw filesystem watcher events. `ephemeral` updates are
@@ -1228,7 +1281,10 @@ export type ScratchpadLifecycle = 'ready' | 'checkpointing' | 'closing' | 'close
 
 export type ScratchpadSnapshotBase = Readonly<{
   scratchpadId: ScratchpadId;
-  owner: TaskId | ThreadId;
+  owner: Readonly<{
+    type: 'task' | 'thread' | 'external';
+    id: UuidV4;
+  }>;
   generation: number;
   head: TreeRef;
   quota: ScratchpadQuotaState;
@@ -1292,9 +1348,18 @@ export type ScratchpadHandle =
 ```
 
 Closing an attachment never chooses retention. Owner cleanup applies the
-declared policy and records deletion, checkpoint, or recovery evidence. The
-discriminator therefore changes the available commands and replay guarantee
+declared policy and records whether ephemeral state was released, an explicit
+checkpoint remains, or checkpointable work closed without one. Closure does
+not claim that content-addressed blobs were physically deleted from a shared
+store. The discriminator changes the available commands and replay guarantee
 instead of pretending all Scratchpads have the same durability.
+
+`@archer/files/scratchpad` exposes hot acknowledged state and a gap-aware
+transient update stream for both memory modes. Only retained handles expose the
+replayable checkpoint stream and `checkpoint()` method. The memory reference
+composes the proven Workspace reducer internally, but callers see independent
+Scratchpad identity, Authority actions, lifecycle, quotas, updates, and close
+evidence; internal Workspace identities and grants never escape.
 
 ### Materializers
 
@@ -1303,45 +1368,57 @@ physical execution view. A Materializer may manage a directory, volume,
 overlay, block image, mount, or remote upload. It does not decide Workspace
 lineage or sandbox policy.
 
-Conceptually:
+The first implementation is the explicit local-directory contract exported by
+both `@archer/files/materializer` and
+`@archer/files/materializer/directory`. The second subpath is an ergonomic
+alias, not another package or implementation:
 
 ```ts
-export interface Materializer<Target> {
-  readonly adapterId: string;
+export interface DirectoryMaterializer extends OwnedHandle<DirectoryMaterializerCloseEvidence> {
+  readonly materializerId: MaterializerId;
+  readonly adapterId: 'archer.directory';
   readonly protocolVersion: 1;
 
-  startMaterialization(input: {
-    workspace: TreeRef;
-    resources: readonly ReadonlyTreeMount[];
-    scratchpads: readonly ScratchpadMount[];
-    target: Target;
-    idempotencyKey: IdempotencyKey;
-    grant: GrantRef<FilesMaterializeAction>;
-  }): Promise<LiveOperation<MaterializationEvent, MaterializationResult, MaterializationCloseEvidence>>;
+  startMaterialization(
+    input: DirectoryMaterializationInput,
+    grant: GrantRef<FilesMaterializeAction>,
+  ): Promise<MaterializationStartOutcome>;
 }
 
-export interface MaterializedView extends OwnedHandle<MaterializationEvidence> {
-  readonly viewId: MaterializedViewId;
+export interface DirectoryMaterializedView extends OwnedHandle<DirectoryMaterializedViewCloseEvidence> {
+  readonly type: 'directory';
+  readonly materializedViewId: MaterializedViewId;
+  readonly materializerId: MaterializerId;
+  readonly protocolVersion: 1;
+  readonly mappingVersion: 1;
   readonly base: TreeRef;
   readonly generation: number;
-  readonly workspacePath: '/workspace';
+  readonly paths: Readonly<{
+    root: string;
+    workspace: string;
+    resources: string;
+    scratchpads: string;
+  }>;
 
-  startIngestion(input: {
-    quiescence: SandboxQuiescence;
-    expectedBase: TreeRef;
-    expectedGeneration: number;
-    grant: GrantRef<FilesIngestAction>;
-  }): Promise<LiveOperation<IngestionEvent, IngestionResult, IngestionCloseEvidence>>;
+  startIngestion(input: DirectoryIngestionInput, grant: GrantRef<FilesIngestAction>): Promise<IngestionStartOutcome>;
 }
 ```
 
-The exact `Target` correlates a Materializer with its sandbox adapter. Runtime
-validation also checks adapter identity, protocol version, mount plan, and
-deserialized configuration.
+`DirectoryMaterializationInput` binds an exact Workspace tree and acknowledged
+generation, ordered Resource and Scratchpad mounts, an absolute absent target,
+explicit case sensitivity, cleanup policy, and UUIDv4 idempotency key. Runtime
+admission rejects traversal and overlapping mounts. Authority can cover the
+whole Materializer attachment or attenuate to the SHA-256 digest of the
+complete normalized input, including mounts and host target, without retaining
+those private values in replay bookkeeping.
 
 Resource trees are read-only. The Workspace tree is writable. Scratchpads use
 separate roots and retention rules. Agent code and arbitrary subprocesses see
 ordinary operating-system paths and do not import an Archer filesystem SDK.
+For the directory adapter, Resource immutability is enforced with ordinary
+filesystem modes. That is useful against cooperating tools but is not a claim
+against a privileged process; the later sandbox adapter supplies its own exact
+mount and containment guarantees.
 
 The Materializer's outer Promise covers validation, current authority, target
 pairing, and construction of one already-running operation. Materialization
@@ -1349,19 +1426,41 @@ and ingestion progress, active abort, partial cleanup, and one tagged result
 belong to that operation. A synchronous adapter returns an already-terminal
 hot operation rather than creating a Promise-only path.
 
-`MaterializedView` does not implement `LiveState`. Arbitrary contained
-processes may mutate its disk without producing acknowledged logical file
+`DirectoryMaterializedView` does not implement `LiveState`. Arbitrary
+cooperating processes may mutate its disk without producing acknowledged logical file
 facts. Its fixed `generation` is the precondition for ingestion, not a claim
-about the current bytes. Ingestion begins only after the sandbox supplies quiescence evidence that
-admitted processes can no longer mutate the view. It walks the complete
-Workspace root, rejects unsupported entries and path escapes, enforces quotas,
-hashes all bytes, and publishes a new verified tree. A partial, stale,
-cancelled, or ambiguous ingestion cannot advance Workspace lineage.
+about the current bytes. The directory adapter accepts only an explicit
+`{ type: 'cooperative-directory', ... }` acknowledgement from the application
+that its own writers stopped. It never promotes that claim into sandbox
+quiescence. Docker, QEMU, Firecracker, and other adapters must define evidence
+matching what they can actually stop and verify.
 
-The same view generation may be ingested repeatedly. It must return the same
-receipt or a protocol violation. A receipt records the exact base and result
-trees, view and generation, Materializer identity, mapping version, excluded
-roots, byte counts, completion status, and evidence digest.
+Directory ingestion walks only the complete Workspace root; Resource and
+Scratchpad roots are structurally excluded. It rejects symlinks, hard links,
+special files, traversal, and configured case collisions. Files stream into
+immutable publication while inode, device, length, modification time, and
+portable mode are checked before and after reads, followed by a second complete
+scan. A partial, stale, cancelled, unsupported, or unstable ingestion produces
+no receipt and cannot advance Workspace lineage.
+
+An exact idempotency retry returns the same hot operation and therefore the
+same receipt. A separately keyed later scan is new evidence and may produce a
+new receipt even when the resulting `TreeRef` is unchanged. A complete receipt
+records its own Archer object identity and creation time, exact base and result
+trees, view and generation, Materializer identity, adapter and mapping version,
+excluded roots, exact file and byte counts, completion status, and evidence
+digest. The shared physical receipt codec recomputes that digest at both
+adapter construction and Workspace acceptance. This proves field integrity;
+it does not make the adapter trusted. Workspace acceptance remains a separate
+current-authority action.
+
+The exact local-directory claims are executable through
+`@archer/files/materializer/conformance`. Its v1 catalogue proves shared hot
+materialization, separated ordinary roots, Workspace-only ingestion, refusal
+of linked physical entries, and retained cleanup. Workspace and process-local
+Scratchpad protocols publish their own sibling conformance subpaths. These
+suites are part of the public contracts; first-party unit tests are not a
+substitute for them.
 
 ### File sequence
 
@@ -2523,19 +2622,19 @@ The contract graph still points inward, but source modules and npm packages are
 different decisions. V1 publishes capability families rather than one package
 per interface or first-party adapter:
 
-| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                                                | Intentional package dependencies                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics` | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
-| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/s3`, `/git`, `/materializer/directory`, `/materializer/docker`, `/materializer/qemu`                                                       | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                   |
-| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                                           | `core`; AI SDK bundled for the supported first-party adapter                                            |
-| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                                                | `core`, `files`, `models`                                                                               |
-| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                  | `core`, `files`; backend-specific optional peers                                                        |
-| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                       |
-| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                            | Selected capability and observability packages                                                          |
-| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                                           | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                             |
-| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                                             | `core`, `agent`                                                                                         |
-| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                                                        | Protocol packages under test                                                                            |
-| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                                             | `agent`, `presets`, `transports`, `observability`                                                       |
+| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                                                                                                                                | Intentional package dependencies                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics`                                                                                 | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
+| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/workspace`, `/workspace/conformance`, `/scratchpad`, `/scratchpad/conformance`, `/materializer`, `/materializer/directory`, `/materializer/conformance`; later `/s3`, `/git`, `/materializer/docker`, `/materializer/qemu` | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                   |
+| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                                                                                                                           | `core`; AI SDK bundled for the supported first-party adapter                                            |
+| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                                                                                                                                | `core`, `files`, `models`                                                                               |
+| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                                                                                                  | `core`, `files`; backend-specific optional peers                                                        |
+| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                       |
+| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                                                                                                            | Selected capability and observability packages                                                          |
+| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                                                                                                                           | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                             |
+| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                                                                                                                             | `core`, `agent`                                                                                         |
+| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                                                                                                                                        | Protocol packages under test                                                                            |
+| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                                                                                                                             | `agent`, `presets`, `transports`, `observability`                                                       |
 
 Each root exports the capability contract and common factories. A subpath
 exports one implementation and its exact configuration. Protocol conformance
@@ -2661,9 +2760,12 @@ suites cover:
   closure;
 - monotonic Workspace and Scratchpad generations, prior-state preservation on
   stale preconditions or quota refusal, no raw-watcher event leakage, and
-  Scratchpad exclusion;
-- Materializer idempotency, read-only mounts, quiescence, full ingestion,
-  partial failure, stale generations, and recovery evidence;
+  Scratchpad exclusion, with public executable suites for both retained
+  protocols;
+- directory Materializer hot idempotency, separated ordinary ownership roots,
+  Workspace-only cooperative ingestion, linked-entry refusal, and retained
+  cleanup through its public executable suite; later adapter suites add their
+  own exact mount, quiescence, partial-failure, and recovery guarantees;
 - authority expiry, revocation, attenuation, action mismatch, and cross-target
   replay;
 - sandbox exact attestation, output limits, contained paths, process-tree
@@ -2782,12 +2884,13 @@ managed demo:
    sharing, explicit bounded DiagnosticSpans, terminal and point
    DiagnosticRecords, the per-sink diagnostic hub, the first-party Pino sink,
    deterministic temporal fixtures, the generic React binding,
-   declaration-leak checks, conformance, and the root core reactive-job example.
+   declaration-leak checks, conformance, and the root documentation-indexer
+   example.
 2. **Immutable files.** Build path codecs, hierarchical blob and tree formats,
    the owned canonical v1 grammar, memory and filesystem stores, canonical
    hashing, structural sharing, verified streaming, property and fault cases,
-   and runnable immutable-tree and local-store examples before resources, Git,
-   and sandboxes can invent separate formats.
+   and runnable directory-fingerprint and local-snapshot-cache examples before
+   resources, Git, and sandboxes can invent separate formats.
 3. **Authority.** Publish action-owned scope codecs and containment, immutable
    grants and revocations, ledger and broker ports, trusted-clock expiry,
    current grant and revocation administration, attenuation, best-effort wide
@@ -2796,8 +2899,13 @@ managed demo:
    deliberately deferred until a real protected workflow can exercise it.
 4. **Materialization and private work.** Build hot Workspace and Scratchpad
    handles, live Materializer and ingestion operations, physical views,
-   lineage, ChangeSet, and Git adapter contracts. Keep raw physical bytes and
-   promotion outside their snapshots.
+   lineage, and private ChangeSets. Publish explicit process-local references
+   and the cooperative directory Materializer without claiming sandbox
+   quiescence or thread durability. Keep raw physical bytes, Git integration,
+   and promotion outside their snapshots. Prove adoption through native Vercel
+   AI SDK code-editor and notebook-agent examples; no standalone Materializer
+   example is required until a sandbox gives the physical view a meaningful
+   execution workflow.
 5. **Cells.** Extract the pure lifecycle Program and retained SQLite, outbox,
    snapshot, fencing, wake, and RxJS activation mechanisms into embedded and
    bucket `CellHost` implementations. Bind Program and state-projection

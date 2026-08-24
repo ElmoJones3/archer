@@ -17,6 +17,34 @@
     "./fs": {
       "types": "./dist/fs/index.d.ts",
       "import": "./dist/fs/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace/index.d.ts",
+      "import": "./dist/workspace/index.js"
+    },
+    "./workspace/conformance": {
+      "types": "./dist/workspace/conformance.d.ts",
+      "import": "./dist/workspace/conformance.js"
+    },
+    "./materializer": {
+      "types": "./dist/materializer/index.d.ts",
+      "import": "./dist/materializer/index.js"
+    },
+    "./materializer/directory": {
+      "types": "./dist/materializer/index.d.ts",
+      "import": "./dist/materializer/index.js"
+    },
+    "./materializer/conformance": {
+      "types": "./dist/materializer/conformance.d.ts",
+      "import": "./dist/materializer/conformance.js"
+    },
+    "./scratchpad": {
+      "types": "./dist/scratchpad/index.d.ts",
+      "import": "./dist/scratchpad/index.js"
+    },
+    "./scratchpad/conformance": {
+      "types": "./dist/scratchpad/conformance.d.ts",
+      "import": "./dist/scratchpad/conformance.js"
     }
   },
   "files": [

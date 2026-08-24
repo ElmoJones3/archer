@@ -313,13 +313,17 @@ handle.
 
 ### Scratchpad
 
-Private working files owned by a Thread or task under an explicit durability
-policy. A Scratchpad has no canonical promotion authority by default.
+Private working files owned by a task, Thread, or ordinary external application
+session under an explicit retention policy. `ephemeral`, `checkpointed`, and
+`thread-durable` change recoverability and available commands; a Scratchpad has
+no canonical promotion authority by default.
 
 ### Materializer
 
-An adapter that turns logical file content into a physical execution view and
-ingests resulting changes back into verifiable logical content.
+An adapter that turns exact logical Workspace, Resource, and Scratchpad content
+into a physical execution view and ingests eligible changes back into
+verifiable logical content. Each adapter states its own physical and quiescence
+guarantees.
 
 ### MaterializedView
 
@@ -328,8 +332,11 @@ trees for an execution target. It is not an authoritative Workspace snapshot.
 
 ### IngestionReceipt
 
-Evidence that a Materializer read a quiesced physical view and produced a
-complete immutable result tree for an exact base and view generation.
+Evidence that a Materializer applied its declared quiescence protocol, read the
+eligible physical Workspace view completely, and produced an immutable result
+tree for an exact base and view generation. It does not acknowledge Workspace
+lineage by itself. Its portable evidence digest proves field integrity, not
+adapter trust or acceptance authority.
 
 ### ChangeSet
 

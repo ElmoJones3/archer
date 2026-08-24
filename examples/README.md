@@ -1,62 +1,111 @@
 # Archer examples
 
-Examples are executable consumers of Archer's public packages. Their directory
-names state how much Archer machinery they use:
+These are complete, runnable TypeScript applications. Pick one by the job you
+want to do. Each example has its own README explaining the result, the Archer
+packages involved, and the code worth copying into another project.
 
-```text
-examples/
-  core/
-  observability/
-  files/
-  cell/
-  agent/
+## Set up the repository
+
+Archer uses Node 26 and pnpm 11. If you use mise, it will select the versions
+pinned by this repository.
+
+```sh
+mise install
+pnpm install
 ```
 
-An example under `core/` may use `@archer/core` but may not reach into a later
-layer. An example under `agent/` may compose the layers beneath it. This ordering
-keeps assumptions visible when two examples solve similar problems with
-different amounts of Archer.
+Run the commands below from the repository root.
 
-## Delivery policy
+## No account or API key required
 
-Every new or materially changed public workflow must add or update at least one
-example that proves the intended use through public package entry points alone.
-The example is part of delivering the workflow.
+### Build a documentation search index
 
-A contained contract or protocol slice may ship without a standalone example
-when isolated execution would be theatre rather than a meaningful workflow. It
-must instead publish executable conformance, and the first real consuming layer
-must exercise the contract in that layer's example. Authority follows this
-path: its contained proof is `@archer/core/authority/conformance`, and the first
-protected mutation workflow will carry its runnable demonstration.
+Turn a Markdown directory into stable JSON while receiving live progress,
+diagnostics, and completion state.
 
-Each example must:
+```sh
+pnpm example:core -- docs /tmp/archer-docs-index.json
+```
 
-- install, build, and run as its own private workspace package;
-- explain which Archer packages and guarantees it relies on;
-- use no `packages/*/src` import, path alias, or unpublished entry point;
-- run deterministically without credentials or network access when its layer
-  permits;
-- comment architectural decisions and lifecycle obligations beside the code;
-- exercise success, a representative failure, and cleanup;
-- participate in root formatting, lint, typecheck, build, and test commands; and
-- provide one named command that a reader can copy from its README.
+[Read the documentation indexer example](core/documentation-indexer)
 
-An example proves public usability. It does not replace package unit tests,
-protocol conformance, or a real dependency test when that dependency owns the
-claimed behavior.
+### Fingerprint a directory
 
-## Available examples
+Calculate one reproducible identity for a directory based on file content and
+executable permissions, not timestamps or traversal order.
 
-- [`core/reactive-job-runner`](core/reactive-job-runner/README.md) composes a
-  pure `Program`, living state, bounded event delivery, finite work, abort, and
-  wide diagnostics without an agent, model, sandbox, or network dependency.
-- [`observability/diagnostic-projections`](observability/diagnostic-projections/README.md)
-  sends one accumulated terminal record to Pino and a real OpenTelemetry SDK
-  while preserving independent delivery and explicit lifecycle ownership.
-- [`files/immutable-tree`](files/immutable-tree/README.md) proves canonical
-  identity convergence, hierarchical structural sharing, path rejection, and
-  retained in-memory cleanup without a host filesystem.
-- [`files/local-store`](files/local-store/README.md) persists the same immutable
-  contracts through `@archer/files/fs`, closes, reopens, verifies a stream,
-  handles missing content, and cleans only its example-owned temporary root.
+```sh
+pnpm example:files:fingerprint -- docs
+```
+
+[Read the directory fingerprint example](files/directory-fingerprint)
+
+### Keep named local snapshots
+
+Save an immutable directory snapshot in a local cache, inspect it in another
+process, and read a file from it after the source changes.
+
+```sh
+pnpm example:files:cache -- save /tmp/archer-snapshots docs-before-edit docs
+pnpm example:files:cache -- list /tmp/archer-snapshots docs-before-edit
+pnpm example:files:cache -- read /tmp/archer-snapshots docs-before-edit architecture.md
+```
+
+[Read the local snapshot cache example](files/local-snapshot-cache)
+
+### Observe an HTTP service
+
+Run a small HTTP service that sends one context-rich record per request to Pino
+and OpenTelemetry. The example uses console exporters, so it needs no collector.
+
+```sh
+pnpm example:observability
+```
+
+The service prints a `curl` command after it starts.
+
+[Read the observed word-count service example](observability/word-count-service)
+
+## OpenAI API key required
+
+These examples make real model calls through the Vercel AI SDK. Set
+`OPENAI_API_KEY` before running them. They use `gpt-5.6-luna` by default and
+accept another model ID through `OPENAI_MODEL`.
+
+### Let an agent edit a private project copy
+
+Give an AI SDK agent normal file-editing tools without letting it mutate the
+source directory. Archer returns the proposed changes for review.
+
+```sh
+export OPENAI_API_KEY="your_api_key_here"
+pnpm example:files:code-editor -- ./my-project "Add a sum function and document its use"
+```
+
+The command lists every file admitted for model access before the first model
+call.
+
+[Read the AI SDK code editor example](files/vercel-ai-sdk-code-editor)
+
+### Give an agent a private notebook
+
+Give an AI SDK agent editable working notes and preserve only the checkpoint it
+explicitly asks the host to retain.
+
+```sh
+export OPENAI_API_KEY="your_api_key_here"
+pnpm example:files:notebook -- /tmp/archer-notes "Draft a release checklist and checkpoint your notes"
+```
+
+[Read the AI SDK notebook example](files/vercel-ai-sdk-notebook-agent)
+
+## How the directories are organized
+
+Examples are grouped by the highest Archer layer they use. A `core` example
+depends only on `@archer/core`. A future `agent` example may combine core, files,
+models, tools, and execution. This makes it clear how much of Archer an
+application needs without changing the application it demonstrates.
+
+Working on Archer itself? Read the
+[example delivery policy](../docs/contributing/examples.md) before adding or
+changing a public workflow.
