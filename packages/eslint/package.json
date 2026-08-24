@@ -2,7 +2,14 @@
   "name": "@archer/eslint",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
+  "files": [
+    "index.js",
+    "prettier.js",
+    "README.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./index.js",
     "./prettier": "./prettier.js"

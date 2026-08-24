@@ -2,6 +2,7 @@
   "name": "@archer/core",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -16,6 +17,14 @@
     "./diagnostics/conformance": {
       "types": "./dist/diagnostics/conformance.d.ts",
       "import": "./dist/diagnostics/conformance.js"
+    },
+    "./authority": {
+      "types": "./dist/authority/index.d.ts",
+      "import": "./dist/authority/index.js"
+    },
+    "./authority/conformance": {
+      "types": "./dist/authority/conformance.d.ts",
+      "import": "./dist/authority/conformance.js"
     },
     "./ownership": {
       "types": "./dist/ownership.d.ts",
@@ -49,7 +58,8 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=26.7.0 <27"

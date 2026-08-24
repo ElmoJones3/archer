@@ -216,10 +216,47 @@ workspace and profile.
 The identity attributed to an action. A Principal is not proof that the action
 is permitted.
 
+### ProtectedAction
+
+An action discriminator paired with the complete scope owned by the package
+that performs the protected operation.
+
+### AuthorityActionDefinition
+
+The runtime scope codec and containment rule registered for one
+ProtectedAction. It interprets that action's scope without teaching Authority
+the owning package's domain vocabulary.
+
 ### GrantRef
 
 A durable lookup reference for an authority decision. Possessing a structurally
 valid GrantRef is not permission to act.
+
+### AuthorizationGrant
+
+An immutable Principal-bound authority fact carrying one action, admitted
+scope, validity window, delegation bound, issuance attribution, and lineage in
+one Authority ledger.
+
+### GrantRevocation
+
+An immutable Authority-ledger fact that retires one AuthorizationGrant and its
+attenuated descendants.
+
+### AuthorityVerification
+
+Evidence that one exact Principal, action, and scope check passed against the
+broker's current facts and trusted clock. It is not reusable permission.
+
+### AuthorityBroker
+
+The finite current-check port consulted immediately before a protected action.
+
+### AuthorityLedger
+
+The retained owner that verifies current authority and records authorized
+grant, attenuation, and revocation transitions. Durability remains an
+implementation-specific guarantee.
 
 ## Sandboxes
 

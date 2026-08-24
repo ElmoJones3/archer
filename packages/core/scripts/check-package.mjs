@@ -67,9 +67,14 @@ try {
   await writeFile(
     resolve(fixtureRoot, 'consumer.ts'),
     `import { Result } from '@archer/core';
+import type { AuthorityBroker, ProtectedAction } from '@archer/core/authority';
 import { transientEventSource } from '@archer/core/stream';
 
 type Progress = Readonly<{ step: number }>;
+type ReadScope = Readonly<{ kind: 'read'; target: string }>;
+type ReadAction = ProtectedAction<'read', ReadScope>;
+
+declare const authority: AuthorityBroker<ReadAction>;
 
 const source = transientEventSource<Progress>()({
   source: 'package-check',
@@ -83,6 +88,7 @@ const source = transientEventSource<Progress>()({
 
 const result = Result.ok(source);
 void result;
+void authority;
 `,
   );
   /** Uses an ES2022 consumer to prove disposable declaration references are self-contained. */
@@ -110,6 +116,8 @@ void result;
   /** Imports every non-React entry point from the installed artifact in one clean process. */
   const nonReactImports = [
     '@archer/core',
+    '@archer/core/authority',
+    '@archer/core/authority/conformance',
     '@archer/core/diagnostics',
     '@archer/core/diagnostics/conformance',
     '@archer/core/ownership',
@@ -147,6 +155,17 @@ await import('@archer/core');`,
   const installedManifest = JSON.parse(
     await readFile(resolve(fixtureRoot, 'node_modules/@archer/core/package.json'), 'utf8'),
   );
+  if (installedManifest.license !== 'Apache-2.0') {
+    throw new Error('Packed core did not preserve the Apache-2.0 SPDX declaration');
+  }
+  /** Compares installed license bytes with the package source of truth. */
+  const [sourceLicense, installedLicense] = await Promise.all([
+    readFile(resolve(packageRoot, 'LICENSE')),
+    readFile(resolve(fixtureRoot, 'node_modules/@archer/core/LICENSE')),
+  ]);
+  if (!sourceLicense.equals(installedLicense)) {
+    throw new Error('Packed core did not preserve its exact Apache-2.0 license text');
+  }
   if (installedManifest.peerDependenciesMeta?.react?.optional !== true) {
     throw new Error('Packed core did not preserve React as an optional peer');
   }

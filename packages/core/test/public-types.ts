@@ -19,6 +19,13 @@ import {
   type StreamCursor,
   type TransientEventStream,
 } from '../src/stream/index.js';
+import type {
+  AuthorityBroker,
+  AuthorityCheck,
+  GrantRef,
+  PrincipalId,
+  ProtectedAction,
+} from '../src/authority/index.js';
 
 /** Distinguishes Thread identities in compile-only assignments. */
 declare const threadIdBrand: unique symbol;
@@ -64,6 +71,60 @@ type OperationProgress = Readonly<{
   /** Carries typed progress through the staged builder. */
   step: number;
 }>;
+
+/** Representative read scope owned by one protected package boundary. */
+type ReportReadScope = Readonly<{
+  /** Selects the exact scope codec in compile-only proofs. */
+  kind: 'report-read';
+
+  /** Names the report being read. */
+  reportId: string;
+}>;
+
+/** Couples report-read authority to its complete package-owned scope. */
+type ReportReadAction = ProtectedAction<'report-read', ReportReadScope>;
+
+/** Representative deployment scope intentionally incompatible with report reads. */
+type DeployScope = Readonly<{
+  /** Selects the deployment scope codec in compile-only proofs. */
+  kind: 'deploy';
+
+  /** Names the environment receiving a deployment. */
+  environment: string;
+}>;
+
+/** Couples deployment authority to a different action and target shape. */
+type DeployAction = ProtectedAction<'deploy', DeployScope>;
+
+/** Supplies a report-specific forgeable lookup reference. */
+declare const reportGrant: GrantRef<ReportReadAction>;
+
+/** Supplies a Principal for exact broker-check construction. */
+declare const authorityPrincipal: PrincipalId;
+
+/** Supplies a broker whose permitted type family remains action-discriminated. */
+declare const authorityBroker: AuthorityBroker<ReportReadAction | DeployAction>;
+
+/** Proves one exact reference, subject, and scope compose at the verification boundary. */
+const reportCheck: AuthorityCheck<ReportReadAction> = {
+  grant: reportGrant,
+  subject: authorityPrincipal,
+  scope: { kind: 'report-read', reportId: 'report-1' },
+};
+
+void authorityBroker.verify(reportCheck);
+
+/** Must remain rejected so an action-specific reference cannot cross categories. */
+// @ts-expect-error A report-read reference cannot pose as deployment authority.
+const wrongAuthorityReference: GrantRef<DeployAction> = reportGrant;
+
+/** Must remain rejected so a valid action cannot carry another package's scope. */
+const wrongAuthorityScope: AuthorityCheck<ReportReadAction> = {
+  grant: reportGrant,
+  subject: authorityPrincipal,
+  // @ts-expect-error Report checks require report-read scope, not deployment scope.
+  scope: { kind: 'deploy', environment: 'production' },
+};
 
 /** Receives only task-family cursor replay. */
 declare const taskEvents: ReplayableEventStream<TaskObservation, StreamCursor<'task'>>;
@@ -158,3 +219,5 @@ void invalidResult;
 void result;
 void broadResult;
 void inferredProgress;
+void wrongAuthorityReference;
+void wrongAuthorityScope;
