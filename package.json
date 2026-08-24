@@ -7,15 +7,17 @@
   "scripts": {
     "build": "turbo run build",
     "check:licenses": "node scripts/check-package-licenses.mjs",
-    "example:core": "pnpm --filter @archer/example-core-reactive-job-runner... build && pnpm --filter @archer/example-core-reactive-job-runner demo",
+    "example:core": "pnpm --filter @archer/example-core-documentation-indexer... build && pnpm --filter @archer/example-core-documentation-indexer demo",
+    "example:files:cache": "pnpm --filter @archer/example-files-local-snapshot-cache... build && pnpm --filter @archer/example-files-local-snapshot-cache demo",
+    "example:files:code-editor": "pnpm --filter @archer/example-files-vercel-ai-sdk-code-editor... build && pnpm --filter @archer/example-files-vercel-ai-sdk-code-editor demo",
+    "example:files:fingerprint": "pnpm --filter @archer/example-files-directory-fingerprint... build && pnpm --filter @archer/example-files-directory-fingerprint demo",
+    "example:files:notebook": "pnpm --filter @archer/example-files-vercel-ai-sdk-notebook-agent... build && pnpm --filter @archer/example-files-vercel-ai-sdk-notebook-agent demo",
+    "example:observability": "pnpm --filter @archer/example-observability-word-count-service... build && pnpm --filter @archer/example-observability-word-count-service demo",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
-    "exampleFilesImmutable": "pnpm --filter @archer/example-files-immutable-tree... build && pnpm --filter @archer/example-files-immutable-tree demo",
-    "exampleFilesLocal": "pnpm --filter @archer/example-files-local-store... build && pnpm --filter @archer/example-files-local-store demo",
-    "exampleObservability": "pnpm --filter @archer/example-observability-diagnostic-projections... build && pnpm --filter @archer/example-observability-diagnostic-projections demo"
+    "typecheck": "turbo run typecheck"
   },
   "engines": {
     "node": ">=26.7.0 <27",
