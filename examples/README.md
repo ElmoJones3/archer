@@ -19,9 +19,16 @@ different amounts of Archer.
 
 ## Delivery policy
 
-Every new or materially changed public layer must add or update at least one
+Every new or materially changed public workflow must add or update at least one
 example that proves the intended use through public package entry points alone.
-The example is part of delivering the layer.
+The example is part of delivering the workflow.
+
+A contained contract or protocol slice may ship without a standalone example
+when isolated execution would be theatre rather than a meaningful workflow. It
+must instead publish executable conformance, and the first real consuming layer
+must exercise the contract in that layer's example. Authority follows this
+path: its contained proof is `@archer/core/authority/conformance`, and the first
+protected mutation workflow will carry its runnable demonstration.
 
 Each example must:
 

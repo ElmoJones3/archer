@@ -8,3 +8,8 @@ The v1 design and dependency-ordered construction roadmap live in
 Executable, layer-scoped applications live in [examples](examples/README.md).
 Each one uses only public package entry points and runs in the repository's
 ordinary build and test pipeline.
+
+## License
+
+Archer is licensed under the [Apache License, Version 2.0](LICENSE). Future
+public package artifacts carry the same license text and SPDX declaration.

@@ -2,6 +2,7 @@
   "name": "@archer/files",
   "version": "0.0.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -21,7 +22,8 @@
   "files": [
     "dist",
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=26.7.0 <27"

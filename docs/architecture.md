@@ -187,11 +187,14 @@ The following rules apply at every entry point:
     composition.
 19. **Ship proof with the port.** A replaceable contract is incomplete without
     codecs, required failure cases, and a versioned conformance suite.
-20. **Ship proof with the layer.** Every new or materially changed public layer
-    adds or updates a root `examples/<layer>/<scenario>` application. Examples
-    import only public package entry points, state their dependency assumptions,
-    exercise failure and cleanup as well as success, and run in the repository's
-    normal build, test, and lint pipeline.
+20. **Ship proof with the layer.** Every new or materially changed workflow
+    adds or updates a root `examples/<layer>/<scenario>` application. A
+    contained contract slice that cannot yet demonstrate a meaningful workflow
+    may ship a public conformance suite instead; its first real consumer must
+    exercise it in that consumer's example. Examples import only public package
+    entry points, state their dependency assumptions, exercise failure and
+    cleanup as well as success, and run in the repository's normal build, test,
+    and lint pipeline.
 
 ## Public values, interfaces, and classes
 
@@ -366,7 +369,7 @@ export interface CellHandle<StateView, Event, Effect>
     OwnedHandle<CellReleaseEvidence> {
   readonly durableEvents: ReplayableEventStream<CellObservation<Event, Effect>, CellCursor>;
   readonly activityEvents: TransientEventStream<CellActivityEvent>;
-  dispatch(command: CellCommand<Event>, grant: GrantRef<'cell-dispatch'>): Promise<Acknowledgement>;
+  dispatch(command: CellCommand<Event>, grant: GrantRef<CellDispatchAction>): Promise<Acknowledgement>;
 }
 ```
 
@@ -462,15 +465,15 @@ export type CellAttachOutcome<StateView, Event, Effect> =
 export interface CellHost extends OwnedHandle<CellHostCloseEvidence> {
   create<State, StateView, Event, Effect>(
     request: CellCreateRequest<State, StateView, Event, Effect>,
-    grant: GrantRef<'cell-create'>,
+    grant: GrantRef<CellCreateAction>,
   ): Promise<CellCreateOutcome<StateView, Event, Effect>>;
   attach<State, StateView, Event, Effect>(
     request: CellAttachRequest<State, StateView, Event, Effect>,
-    grant: GrantRef<'cell-attach'>,
+    grant: GrantRef<CellAttachAction>,
   ): Promise<CellAttachOutcome<StateView, Event, Effect>>;
   readState<State>(
     request: CellStateReadRequest<State>,
-    grant: GrantRef<'cell-read'>,
+    grant: GrantRef<CellReadAction>,
   ): Promise<CellStateReadOutcome<State>>;
 }
 ```
@@ -567,10 +570,10 @@ export interface ThreadHandle
     OwnedHandle<ThreadCloseEvidence> {
   readonly durableEvents: ReplayableEventStream<ThreadEvent, ThreadCursor>;
   readonly presentationEvents: TransientEventStream<ThreadPresentationEvent>;
-  startTurn(command: TurnStartCommand, grant: GrantRef<'turn-start'>): Promise<TurnStartReceipt>;
+  startTurn(command: TurnStartCommand, grant: GrantRef<TurnStartAction>): Promise<TurnStartReceipt>;
   waitForTurn(turnId: TurnId): Promise<TurnWaitSettlement>;
-  decideApproval(command: ApprovalDecisionCommand, grant: GrantRef<'tool-approval'>): Promise<ApprovalReceipt>;
-  cancelTurn(command: TurnCancellationCommand, grant: GrantRef<'turn-cancel'>): Promise<CancellationReceipt>;
+  decideApproval(command: ApprovalDecisionCommand, grant: GrantRef<ToolApprovalAction>): Promise<ApprovalReceipt>;
+  cancelTurn(command: TurnCancellationCommand, grant: GrantRef<TurnCancelAction>): Promise<CancellationReceipt>;
 }
 ```
 
@@ -1174,12 +1177,12 @@ export interface WorkspaceHandle
     OwnedHandle<WorkspaceCloseEvidence> {
   readonly workspaceId: WorkspaceId;
   readonly durableEvents: ReplayableEventStream<WorkspaceEvent, WorkspaceCursor>;
-  read(request: WorkspaceReadRequest, grant: GrantRef<'workspace-read'>): Promise<WorkspaceReadOutcome>;
-  list(request: WorkspaceListRequest, grant: GrantRef<'workspace-read'>): Promise<WorkspaceListOutcome>;
-  diff(request: WorkspaceDiffRequest, grant: GrantRef<'workspace-read'>): Promise<WorkspaceDiffOutcome>;
-  apply(command: WorkspaceMutation, grant: GrantRef<'workspace-write'>): Promise<WorkspaceMutationOutcome>;
-  acceptIngestion(receipt: IngestionReceipt, grant: GrantRef<'workspace-write'>): Promise<WorkspaceMutationOutcome>;
-  createChangeSet(input: ChangeSetRequest, grant: GrantRef<'changeset-create'>): Promise<ChangeSetOutcome>;
+  read(request: WorkspaceReadRequest, grant: GrantRef<WorkspaceReadAction>): Promise<WorkspaceReadOutcome>;
+  list(request: WorkspaceListRequest, grant: GrantRef<WorkspaceReadAction>): Promise<WorkspaceListOutcome>;
+  diff(request: WorkspaceDiffRequest, grant: GrantRef<WorkspaceReadAction>): Promise<WorkspaceDiffOutcome>;
+  apply(command: WorkspaceMutation, grant: GrantRef<WorkspaceWriteAction>): Promise<WorkspaceMutationOutcome>;
+  acceptIngestion(receipt: IngestionReceipt, grant: GrantRef<WorkspaceWriteAction>): Promise<WorkspaceMutationOutcome>;
+  createChangeSet(input: ChangeSetRequest, grant: GrantRef<ChangeSetCreateAction>): Promise<ChangeSetOutcome>;
 }
 ```
 
@@ -1251,9 +1254,9 @@ export interface ScratchpadHandleBase<R extends ScratchpadRetention>
   extends LiveState<ScratchpadSnapshot<R>>, OwnedHandle<ScratchpadCloseEvidence> {
   readonly retention: R;
   readonly updates: TransientEventStream<ScratchpadUpdate>;
-  read(request: ScratchpadReadRequest, grant: GrantRef<'scratchpad-read'>): Promise<ScratchpadReadOutcome>;
-  list(request: ScratchpadListRequest, grant: GrantRef<'scratchpad-read'>): Promise<ScratchpadListOutcome>;
-  apply(command: ScratchpadMutation, grant: GrantRef<'scratchpad-write'>): Promise<ScratchpadMutationOutcome>;
+  read(request: ScratchpadReadRequest, grant: GrantRef<ScratchpadReadAction>): Promise<ScratchpadReadOutcome>;
+  list(request: ScratchpadListRequest, grant: GrantRef<ScratchpadReadAction>): Promise<ScratchpadListOutcome>;
+  apply(command: ScratchpadMutation, grant: GrantRef<ScratchpadWriteAction>): Promise<ScratchpadMutationOutcome>;
 }
 
 export interface EphemeralScratchpadHandle
@@ -1280,7 +1283,7 @@ export interface RetainedScratchpadHandle<R extends Exclude<ScratchpadRetention,
   readonly checkpointEvents: ReplayableEventStream<ScratchpadCheckpointEvent, ScratchpadCursor>;
   checkpoint(
     command: Readonly<{ expectedGeneration: number; idempotencyKey: IdempotencyKey }>,
-    grant: GrantRef<'scratchpad-checkpoint'>,
+    grant: GrantRef<ScratchpadCheckpointAction>,
   ): Promise<ScratchpadCheckpointOutcome>;
 }
 
@@ -1313,7 +1316,7 @@ export interface Materializer<Target> {
     scratchpads: readonly ScratchpadMount[];
     target: Target;
     idempotencyKey: IdempotencyKey;
-    grant: GrantRef<'files-materialize'>;
+    grant: GrantRef<FilesMaterializeAction>;
   }): Promise<LiveOperation<MaterializationEvent, MaterializationResult, MaterializationCloseEvidence>>;
 }
 
@@ -1327,7 +1330,7 @@ export interface MaterializedView extends OwnedHandle<MaterializationEvidence> {
     quiescence: SandboxQuiescence;
     expectedBase: TreeRef;
     expectedGeneration: number;
-    grant: GrantRef<'files-ingest'>;
+    grant: GrantRef<FilesIngestAction>;
   }): Promise<LiveOperation<IngestionEvent, IngestionResult, IngestionCloseEvidence>>;
 }
 ```
@@ -1407,7 +1410,7 @@ Promotion is outside task execution. A promotion service:
 
 ```ts
 export interface PromotionService extends OwnedHandle<PromotionServiceCloseEvidence> {
-  promote(request: PromotionRequest, grant: GrantRef<'workspace-promote'>): Promise<PromotionOutcome>;
+  promote(request: PromotionRequest, grant: GrantRef<WorkspacePromoteAction>): Promise<PromotionOutcome>;
 }
 ```
 
@@ -1445,11 +1448,11 @@ an immutable ResourceSet mutate underneath a Turn:
 ```ts
 export interface ResourceControl extends OwnedHandle<ResourceControlCloseEvidence> {
   readonly lifecycleEvents: ReplayableEventStream<ResourceLifecycleEvent, ResourceLifecycleCursor>;
-  getProfile(profileId: ProfileId, grant: GrantRef<'resource-read'>): Promise<ProfileRevision>;
-  updateProfile(command: ProfileUpdate, grant: GrantRef<'profile-write'>): Promise<ProfileUpdateOutcome>;
-  admit(command: ResourceAdmissionCommand, grant: GrantRef<'resource-admit'>): Promise<ResourceAdmissionOutcome>;
-  revoke(command: ResourceRevocationCommand, grant: GrantRef<'resource-revoke'>): Promise<ResourceRevocationOutcome>;
-  compile(input: CompileResourceSetInput, grant: GrantRef<'resource-read'>): Promise<CompiledResourceSetReceipt>;
+  getProfile(profileId: ProfileId, grant: GrantRef<ResourceReadAction>): Promise<ProfileRevision>;
+  updateProfile(command: ProfileUpdate, grant: GrantRef<ProfileWriteAction>): Promise<ProfileUpdateOutcome>;
+  admit(command: ResourceAdmissionCommand, grant: GrantRef<ResourceAdmitAction>): Promise<ResourceAdmissionOutcome>;
+  revoke(command: ResourceRevocationCommand, grant: GrantRef<ResourceRevokeAction>): Promise<ResourceRevocationOutcome>;
+  compile(input: CompileResourceSetInput, grant: GrantRef<ResourceReadAction>): Promise<CompiledResourceSetReceipt>;
 }
 ```
 
@@ -1571,7 +1574,7 @@ Acquisition has separate owners:
 export interface SandboxManager extends OwnedHandle<SandboxManagerCloseEvidence> {
   acquire<Config extends SandboxConfig>(
     requirement: SandboxRequirement<Config>,
-    grant: GrantRef<'sandbox-acquire'>,
+    grant: GrantRef<SandboxAcquireAction>,
   ): Promise<LiveOperation<SandboxAcquisitionEvent, SandboxAcquisitionResult<Config>, SandboxAcquisitionCloseEvidence>>;
 }
 
@@ -1601,7 +1604,7 @@ export interface SandboxHandle<Config extends SandboxConfig>
   readonly lifecycleEvents: TransientEventStream<SandboxLifecycleEvent>;
   execute(
     request: SandboxExecutionRequest,
-    grant: GrantRef<'sandbox-execute'>,
+    grant: GrantRef<SandboxExecuteAction>,
   ): Promise<LiveOperation<SandboxExecutionEvent, SandboxExecutionResult, SandboxExecutionCloseEvidence>>;
 }
 ```
@@ -1644,22 +1647,82 @@ execution, for example, binds subject, Workspace, sandbox, invocation,
 resource revision, artifact tree, argv digest, allowed environment names, and
 time. A retained handle does not cache permission.
 
+The package that performs an action owns its action discriminator, scope codec,
+and containment rule. Authority therefore remains generic without accepting
+untyped bags or maintaining an import-time global registry. A representative
+definition has this shape:
+
 ```ts
-export interface AuthorityBroker extends OwnedHandle<AuthorityBrokerCloseEvidence> {
-  verify<Action extends ProtectedAction>(request: AuthorityCheck<Action>): Promise<AuthorityDecision<Action>>;
+type WorkspaceReadAction = ProtectedAction<'workspace-read', WorkspaceReadScope>;
+
+const WORKSPACE_READ_ACTION = defineAuthorityAction<WorkspaceReadAction>({
+  action: 'workspace-read',
+  scope: workspaceReadScopeCodec,
+  allows(granted, requested) {
+    return granted.workspaceId === requested.workspaceId && granted.tree === requested.tree;
+  },
+});
+```
+
+The action descriptor is the generic type argument. This makes
+`GrantRef<WorkspaceReadAction>` structurally incompatible with a reference for
+another action and binds `AuthorityCheck<WorkspaceReadAction>` to
+`WorkspaceReadScope`. Runtime verification still treats every reference as
+forgeable and re-admits scope through the registered codec.
+
+```ts
+export interface AuthorityBroker<Actions extends ProtectedAction> extends OwnedHandle<AuthorityBrokerCloseEvidence> {
+  verify<Action extends Actions>(request: AuthorityCheck<Action>): Promise<AuthorityDecision<Action>>;
 }
 
-export interface AuthorityLedger extends AuthorityBroker {
-  grant(command: GrantCommand, authority: GrantRef<'authority-grant'>): Promise<GrantOutcome>;
-  revoke(command: RevokeCommand, authority: GrantRef<'authority-revoke'>): Promise<RevokeOutcome>;
+export interface AuthorityLedger<Actions extends ProtectedAction> extends AuthorityBroker<
+  Actions | AuthorityGrantAction | AuthorityRevokeAction
+> {
+  grant<Action extends Actions>(
+    command: GrantCommand<Action>,
+    authority: GrantRef<AuthorityGrantAction>,
+  ): Promise<GrantOutcome<Action>>;
+
+  attenuate<Action extends Actions>(
+    command: AttenuateGrantCommand<Action>,
+    parent: GrantRef<Action>,
+  ): Promise<GrantOutcome<Action>>;
+
+  revoke<Action extends Actions | AuthorityGrantAction | AuthorityRevokeAction>(
+    command: RevokeGrantCommand<Action>,
+    authority: GrantRef<AuthorityRevokeAction>,
+  ): Promise<RevokeGrantOutcome<Action>>;
 }
 ```
 
-The broker uses its trusted clock and current revocation state for each check.
-A verification receipt proves that check at that action boundary. It is not a
-reusable capability or a live permission cache. An optional authority audit
-API may expose replayable ledger facts, but no subscriber or snapshot can
+An `AuthorizationGrant` is an immutable Principal-bound fact with ledger,
+action, admitted scope, validity window, delegation depth, issuance
+attribution, and explicit bootstrap, administrative, or attenuation origin.
+`GrantRevocation` is a separate immutable fact. Grant issuance and revocation
+require distinct current administration grants; administrator identity alone
+does nothing. Attenuation may change subject and narrow scope, lifetime, and
+remaining depth, but its parent and every ancestor remain dynamically relevant.
+
+The broker uses its trusted clock and current revocation facts for each check;
+callers cannot supply verification time. A verification receipt proves only
+that exact subject, action, and scope check at that boundary. It is not a
+reusable capability or a live permission cache. An Authority audit API may
+eventually expose replayable ledger facts, but no subscriber or snapshot can
 implement `verify()`.
+
+`createMemoryAuthorityLedger()` is the v1 reference behavior and makes an
+explicit process-local, ephemeral durability claim. It copies action
+definitions and bootstrap roots, serializes its in-process transitions,
+deduplicates commands by UUIDv4 idempotency key, and owns one idempotent close
+settlement. Independent durable implementations must pass
+`@archer/core/authority/conformance`; a report covers its exact implementation
+version and configuration, not every configuration the adapter could support.
+
+The ledger may borrow the product-neutral `beginSpan` diagnostic capability.
+Verification, grant, attenuation, revocation, and first closure each accumulate
+one terminal wide span. Correlation includes ledger, grant, and revocation IDs;
+protected scope values do not enter generic records. A missing, closed, or
+failing diagnostic producer cannot grant, deny, mutate, or revoke authority.
 
 Managed local setup may create a local authority ledger, Principal, and scoped
 grants because the caller explicitly selected that policy. `runTask` does not
@@ -1898,9 +1961,9 @@ export interface TaskRun
   readonly diagnostics: TransientEventStream<DiagnosticRecord>;
   readonly settled: Promise<TaskRunSettlement>;
 
-  decideApproval(command: ApprovalDecisionCommand, grant: GrantRef<'tool-approval'>): Promise<ApprovalReceipt>;
+  decideApproval(command: ApprovalDecisionCommand, grant: GrantRef<ToolApprovalAction>): Promise<ApprovalReceipt>;
 
-  cancel(command: TaskCancellationCommand, grant: GrantRef<'task-cancel'>): Promise<CancellationReceipt>;
+  cancel(command: TaskCancellationCommand, grant: GrantRef<TaskCancelAction>): Promise<CancellationReceipt>;
 }
 ```
 
@@ -2460,19 +2523,19 @@ The contract graph still points inward, but source modules and npm packages are
 different decisions. V1 publishes capability families rather than one package
 per interface or first-party adapter:
 
-| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                      | Intentional package dependencies                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/diagnostics` | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
-| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/s3`, `/git`, `/materializer/directory`, `/materializer/docker`, `/materializer/qemu`                             | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                   |
-| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                 | `core`; AI SDK bundled for the supported first-party adapter                                            |
-| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                      | `core`, `files`, `models`                                                                               |
-| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                        | `core`, `files`; backend-specific optional peers                                                        |
-| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                       | `core`, `files`, `models`, `resources`, `sandbox`                                                       |
-| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                  | Selected capability and observability packages                                                          |
-| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                 | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                             |
-| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                   | `core`, `agent`                                                                                         |
-| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                              | Protocol packages under test                                                                            |
-| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                   | `agent`, `presets`, `transports`, `observability`                                                       |
+| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                                                | Intentional package dependencies                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics` | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
+| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/s3`, `/git`, `/materializer/directory`, `/materializer/docker`, `/materializer/qemu`                                                       | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                   |
+| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                                           | `core`; AI SDK bundled for the supported first-party adapter                                            |
+| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                                                | `core`, `files`, `models`                                                                               |
+| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                  | `core`, `files`; backend-specific optional peers                                                        |
+| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                       |
+| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                            | Selected capability and observability packages                                                          |
+| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                                           | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                             |
+| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                                             | `core`, `agent`                                                                                         |
+| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                                                        | Protocol packages under test                                                                            |
+| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                                             | `agent`, `presets`, `transports`, `observability`                                                       |
 
 Each root exports the capability contract and common factories. A subpath
 exports one implementation and its exact configuration. Protocol conformance
@@ -2725,13 +2788,16 @@ managed demo:
    hashing, structural sharing, verified streaming, property and fault cases,
    and runnable immutable-tree and local-store examples before resources, Git,
    and sandboxes can invent separate formats.
-3. **Materialization and private work.** Build hot Workspace and Scratchpad
+3. **Authority.** Publish action-owned scope codecs and containment, immutable
+   grants and revocations, ledger and broker ports, trusted-clock expiry,
+   current grant and revocation administration, attenuation, best-effort wide
+   spans, the ephemeral memory reference, public conformance, and cross-target
+   tests before protected mutation handles ship. A standalone example is
+   deliberately deferred until a real protected workflow can exercise it.
+4. **Materialization and private work.** Build hot Workspace and Scratchpad
    handles, live Materializer and ingestion operations, physical views,
    lineage, ChangeSet, and Git adapter contracts. Keep raw physical bytes and
    promotion outside their snapshots.
-4. **Authority.** Publish action-specific scopes, ledger and broker ports,
-   expiry, revocation, attenuation, and cross-target tests before protected
-   mutation handles ship.
 5. **Cells.** Extract the pure lifecycle Program and retained SQLite, outbox,
    snapshot, fencing, wake, and RxJS activation mechanisms into embedded and
    bucket `CellHost` implementations. Bind Program and state-projection

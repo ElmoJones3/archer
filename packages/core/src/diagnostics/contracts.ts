@@ -69,6 +69,15 @@ export type DiagnosticCorrelation = Readonly<{
 
   /** Correlates a record with one promoted workspace delta. */
   changeSetId?: UuidV4;
+
+  /** Correlates a record with one Authority ledger attachment. */
+  authorityLedgerId?: UuidV4;
+
+  /** Correlates a record with one immutable authorization grant. */
+  authorizationGrantId?: UuidV4;
+
+  /** Correlates a record with one immutable grant-revocation fact. */
+  grantRevocationId?: UuidV4;
 }>;
 
 /** Runtime schema for bounded low-cardinality work correlation. */
@@ -87,6 +96,9 @@ export const DiagnosticCorrelationSchema = z
     workspaceId: UuidV4Schema.optional(),
     resourceSetId: UuidV4Schema.optional(),
     changeSetId: UuidV4Schema.optional(),
+    authorityLedgerId: UuidV4Schema.optional(),
+    authorizationGrantId: UuidV4Schema.optional(),
+    grantRevocationId: UuidV4Schema.optional(),
   })
   .transform((value) => value as DiagnosticCorrelation)
   .readonly();

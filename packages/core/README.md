@@ -1,8 +1,8 @@
 # `@archer/core`
 
 `@archer/core` contains Archer's product-neutral values, pure decision
-contract, lifecycle ownership, RxJS-free reactive bridge, finite operations,
-and diagnostic dispatcher.
+contracts, lifecycle ownership, RxJS-free reactive bridge, finite operations,
+Authority, and the diagnostic dispatcher.
 
 > This is an unreleased workspace package. Its `private` flag is deliberate
 > until Archer's first public release; examples use the final package name so
@@ -27,11 +27,15 @@ The package is ESM-only; CommonJS `require()` is not supported.
 - `@archer/core/stream` provides live state, durable replay, transient events,
   atomic attachment, finite operations, and staged inference builders.
 - `@archer/core/diagnostics` provides record codecs and the diagnostic hub.
+- `@archer/core/authority` provides action-owned scopes, immutable grants and
+  revocations, current verification, and the ephemeral memory reference ledger.
 - `@archer/core/react` provides `useLiveState` over React's external-store
   contract.
 - `@archer/core/stream/conformance` and
   `@archer/core/diagnostics/conformance` provide versioned, framework-neutral
-  compatibility suites.
+  compatibility suites. `@archer/core/authority/conformance` proves current
+  grant, attenuation, revocation, administration, idempotency, and lifecycle
+  semantics.
 - `@archer/core/stream/testing` provides deterministic scheduling and promise
   controls for temporal tests.
 
@@ -203,6 +207,47 @@ abort. Repeating an abort idempotency key returns the same retained promise.
 `transientEventSource<Event>()` let callers select the event type while result,
 close-evidence, and source-literal types continue to infer.
 
+## Authority
+
+Authority is a current check, not a shape a caller can possess. A downstream
+package defines a `ProtectedAction<Name, Scope>` and registers its scope codec
+and containment rule with `defineAuthorityAction()`. That descriptor binds
+`GrantRef<Action>`, `AuthorityCheck<Action>`, stored grants, and command results
+at compile time; the broker repeats runtime admission because references remain
+forgeable at JavaScript and transport boundaries.
+
+`createMemoryAuthorityLedger()` opens the v1 process-local reference over an
+explicit UUIDv4 ledger ID, action definitions, bootstrap grants, and optional
+trusted clock. It provides:
+
+- `verify()` for one immediate subject, action, scope, time, lineage, and
+  revocation decision;
+- `grant()` under a current `AuthorityGrantAction` grant;
+- `attenuate()` for a narrower same-action subject, scope, lifetime, and
+  delegation bound;
+- `revoke()` under a distinct current `AuthorityRevokeAction` grant; and
+- idempotent closure that stops the attachment without manufacturing a
+  revocation fact.
+
+Bootstrap construction is the only trusted root path. `Principal` is
+attribution, `GrantRef` is lookup, and `AuthorityVerification` is evidence for
+the immediate call—not a reusable capability or permission snapshot. An
+attenuated grant remains dependent on current ancestors, so parent expiry or
+revocation invalidates its descendants.
+
+`PrincipalSchema` is the canonical Authority-owned specialization of Archer's
+shared `{ id, object, createdAt }` envelope. UUIDv4 identity schemas and the
+bounded revocation-reason schema are exported beside the contracts so callers
+do not duplicate runtime admission.
+
+The ledger may borrow a diagnostics hub. It produces one accumulated terminal
+span for verification, issuance, attenuation, revocation, and first closure.
+Records correlate ledger and fact identities without retaining protected scope;
+diagnostic unavailability never changes the domain outcome. The memory ledger
+makes no durability claim. Durable adapters implement the same ports and run
+`@archer/core/authority/conformance` against each guarantee-bearing
+configuration.
+
 ## Diagnostics
 
 `createDiagnostics()` returns a retained hub with a public transient event
@@ -294,14 +339,15 @@ const evidence = await requirePassingStreamConformance(report);
 Reports include the required catalogue, executed and skipped counts,
 normalized time, environment, configuration digest, case results, and evidence
 digest. Promotion recomputes both digests asynchronously against a deeply
-immutable report snapshot. The exported `StreamConformanceReportSchema` and
-`DiagnosticsConformanceReportSchema` admit stored or transported reports through
-the same Zod 4 boundary before verification. Hashes prove report integrity, not
-producer identity; deployments that require provenance sign the evidence through
-their own trust boundary. `pnpm --filter @archer/core check:package` additionally
-packs the real artifact, installs it with pnpm into an empty project, compiles the
-low-level example, checks clean imports and root side effects, and probes optional
-React behavior plus production diagnostic shutdown.
+immutable report snapshot. The exported `StreamConformanceReportSchema`,
+`DiagnosticsConformanceReportSchema`, and `AuthorityConformanceReportSchema`
+admit stored or transported reports through the same Zod 4 boundary before
+verification. Hashes prove report integrity, not producer identity; deployments
+that require provenance sign the evidence through their own trust boundary.
+`pnpm --filter @archer/core check:package` additionally packs the real artifact,
+installs it with pnpm into an empty project, compiles the low-level example,
+checks clean imports and root side effects, and probes optional React behavior
+plus production diagnostic shutdown.
 
 The full rationale and construction order live in
 [`docs/architecture.md`](../../docs/architecture.md).
