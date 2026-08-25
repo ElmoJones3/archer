@@ -20,6 +20,18 @@ information the signature cannot express.
 Use ordinary comments inside an implementation only to preserve a choice,
 invariant, or gotcha. Do not narrate each expression or branch.
 
+## Keep runnable examples readable
+
+For files under `examples/`, require the file overview and useful JSDoc on
+exports, domain objects, and integration, policy, failure, or lifecycle
+boundaries. Do not require JSDoc on obvious local variables, small callbacks,
+or control-flow helpers. Their names and bodies should carry the explanation.
+
+Example comments speak to the application developer. Explain what crosses a
+service boundary, what credentials or resources the copied code owns, and what
+happens during failure or cleanup. Leave storage algorithms and conformance
+vocabulary to package source and architecture documentation.
+
 ## Install JSDoc enforcement
 
 Use the repository's existing package manager. Install ESLint and the parser
@@ -33,10 +45,12 @@ the tooling required by this mandatory rule.
 
 Configure documentation failures as errors. Require a file overview and JSDoc on
 every declaration and member context the active JavaScript or TypeScript parser
-exposes. Do not limit checks to exports or exempt private, short, empty, or
-constructor declarations. Enable rules that reject empty blocks and missing
-descriptions. Keep type-tag requirements compatible with the language: JavaScript
-may need JSDoc types, while TypeScript should not duplicate its annotations.
+exposes. Do not limit package code to exports or exempt private, short, empty,
+or constructor declarations. Add an `examples/**` override for the narrower
+runnable-example rule above. Enable rules that reject empty blocks and missing
+descriptions. Keep type-tag requirements compatible with the language:
+JavaScript may need JSDoc types, while TypeScript should not duplicate its
+annotations.
 
 Run the configured ESLint command after the change. Then perform the manual audit,
 because a syntactically valid JSDoc block can still say nothing useful.

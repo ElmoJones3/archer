@@ -87,6 +87,11 @@ if (packageJson.peerDependenciesMeta?.react?.optional !== true) {
   throw new Error('React must remain an optional peer dependency');
 }
 
+/** Ensures the direct S3 transport remains optional metadata for its isolated subpath. */
+if (packageJson.peerDependenciesMeta?.['@aws-sdk/client-s3']?.optional !== true) {
+  throw new Error('The AWS SDK must remain an optional peer dependency');
+}
+
 /** Verifies every documented package entry in a fresh Node process. */
 for (const subpath of Object.keys(packageJson.exports)) {
   /** Converts the package export key into its self-referenced import specifier. */

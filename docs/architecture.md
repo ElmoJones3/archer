@@ -319,13 +319,15 @@ policy decisions, adapter output, and extension output enter as explicit
 events when they matter.
 
 A Cell owns one ordered Program instance. Its acknowledgement means the event,
-new state, effect intents, cancellation facts, sequence, fence, and recoverable
-storage reference satisfied that Cell host's published durability contract.
+new state, effect intents, wake, sequence, and fence satisfied that Cell host's
+published durability contract.
 
-The embedded host acknowledges after its SQLite transaction. The bucket-backed
-reference host acknowledges after the transaction, immutable snapshot upload,
-and fenced manifest compare-and-swap. Neither may acknowledge at an earlier
-boundary merely because local work completed.
+The embedded host acknowledges after its SQLite transaction. The direct S3 host
+first publishes one immutable storage-neutral revision and acknowledges only
+after replacing the Cell's small head object under the exact current ETag. A
+lost race may leave an unreachable immutable orphan; it cannot acknowledge or
+become canonical. Neither host may acknowledge merely because local work or an
+immutable upload completed.
 
 Effect identity is deterministic from the causing sequence and effect
 position. An activation claims a new attempt under the current fence. A late,
@@ -333,14 +335,31 @@ cancelled, duplicate, or fenced completion cannot commit a terminal event.
 External effects remain at least once unless the destination honors Archer's
 effect or invocation identity.
 
-Cell acquisition, renewal, restore, wake, fencing, and release also belong in a
-focused pure lifecycle Program. Archer will extract the useful SQLite,
-conditional-write, snapshot, fencing, outbox, and RxJS activation mechanisms
-from the retained runtime without retaining its broad public classes.
+Cell acquisition, renewal, restore, wake, fencing, and release use the same
+storage-neutral record mechanics. The embedded adapter runs Node's synchronous
+SQLite connection in an owned worker. The S3 adapter stores canonical bytes,
+receipts, attempts, leases, wakes, and observations directly in immutable
+revisions; it does not conceal a SQLite database inside an object-store host.
+Both reuse one RxJS-backed activation runtime behind the standard public stream
+contracts.
+
+The S3 host performs a live conditional-object probe before it serves. The
+probe proves absence-conditioned create, current-token replacement, rejection
+of a retired token, and exact readback. ETags remain opaque versions; Archer
+never treats them as content hashes. The mandatory probe object is retained
+under an explicit prefix so operators can inspect it and apply bucket lifecycle
+policy.
+
+S3 credentials and signing belong to AWS SDK v3. Managed construction uses the
+SDK's standard Node credential chain, including environment credentials, AWS
+SSO and shared profiles, web identity, and workload roles. Advanced callers may
+inject an existing `S3Client` with explicit borrowed or owned lifecycle.
+Credentials never enter Cell state, immutable revisions, observations,
+diagnostics, errors, examples, or fixtures.
 
 The durable Cell aggregate remains a pure value. Its retained activation
-handle is reactive because acknowledgement, renewal, recovery, wake, and
-fencing can occur without a caller method:
+handle is reactive because acknowledgement, renewal, effect settlement, wake,
+and fencing can occur without a caller method:
 
 ```ts
 export type CellHandleSnapshot<StateView> = Readonly<{
@@ -352,26 +371,25 @@ export type CellHandleSnapshot<StateView> = Readonly<{
     state: StateView;
   }>;
   lifecycle:
-    | Readonly<{ status: 'active'; lease: ActivationLeaseView }>
-    | Readonly<{ status: 'recovering'; recovery: CellRecoveryState }>
-    | Readonly<{ status: 'fenced'; evidence: FencingEvidence }>
-    | Readonly<{ status: 'released'; evidence: CellReleaseEvidence }>;
+    | Readonly<{ status: 'active'; leaseExpiresAt: Timestamp }>
+    | Readonly<{ status: 'fenced'; fence: FenceEpoch }>
+    | Readonly<{ status: 'released' }>;
 }>;
 
-export interface CellHandle<StateView, Event, Effect>
+export interface CellHandle<StateView, Event, Progress extends JsonValue = JsonValue>
   extends
     LiveState<CellHandleSnapshot<StateView>>,
     AtomicLiveAttachmentSource<
       CellHandleSnapshot<StateView>,
       'cell',
       CellCursor,
-      CellObservation<Event, Effect>,
-      Readonly<{ activity: CellActivityEvent }>
+      CellObservation<Event>,
+      Readonly<{ activity: CellActivityEvent<Progress> }>
     >,
     OwnedHandle<CellReleaseEvidence> {
-  readonly durableEvents: ReplayableEventStream<CellObservation<Event, Effect>, CellCursor>;
-  readonly activityEvents: TransientEventStream<CellActivityEvent>;
-  dispatch(command: CellCommand<Event>, grant: GrantRef<CellDispatchAction>): Promise<Acknowledgement>;
+  readonly durableEvents: ReplayableEventStream<CellObservation<Event>, CellCursor>;
+  readonly activityEvents: TransientEventStream<CellActivityEvent<Progress>>;
+  dispatch(command: CellCommand<Event>, grant: GrantRef<CellDispatchAction>): Promise<CellDispatchOutcome>;
 }
 ```
 
@@ -391,10 +409,10 @@ A non-agent Program connects acknowledged effect intents to replaceable live
 work through the same finite contract used by Archer's built-in domains:
 
 ```ts
-export interface EffectAdapter<Effect, Event, Progress> {
+export interface CellEffectAdapter<Effect, Event, Progress extends JsonValue = JsonValue> {
   start(
     attempt: AcknowledgedEffectAttempt<Effect>,
-  ): Promise<LiveOperation<Progress, EffectAttemptResult<Event>, EffectAttemptCloseEvidence>>;
+  ): Promise<LiveOperation<Progress, CellEffectResult<Event>, CellEffectAttemptCloseEvidence>>;
 }
 ```
 
@@ -412,33 +430,39 @@ export type CellProtocol<State, StateView, Event, Effect> = Readonly<{
   protocolRevision: CellProtocolRevision;
   programRevision: ProgramRevision;
   projectionRevision: StateProjectionRevision;
-  durability: CellDurabilityClass;
+  durability: CellDurabilityRequirement;
   program: Program<State, Event, Effect>;
   projectState(state: State): StateView;
+  projectWake?: (state: State) => CellWake<Event> | undefined;
   codecs: Readonly<{
-    state: Codec<State>;
-    stateView: BoundedCodec<StateView>;
-    event: Codec<Event>;
-    effect: Codec<Effect>;
+    state: CellCodec<State>;
+    stateView: CellCodec<StateView>;
+    event: CellCodec<Event>;
+    effect: CellCodec<Effect>;
   }>;
 }>;
 
-export type CellCreateRequest<State, StateView, Event, Effect> = Readonly<{
+export type CellCreateRequest<State, StateView, Event, Effect, Progress extends JsonValue = JsonValue> = Readonly<{
   cellId: CellId;
+  subject: PrincipalId;
   initialState: State;
   protocol: CellProtocol<State, StateView, Event, Effect>;
+  activation?: CellActivationOptions<Effect, Event, Progress>;
   idempotencyKey: IdempotencyKey;
 }>;
 
-export type CellAttachRequest<State, StateView, Event, Effect> = Readonly<{
+export type CellAttachRequest<State, StateView, Event, Effect, Progress extends JsonValue = JsonValue> = Readonly<{
   cellId: CellId;
+  subject: PrincipalId;
   protocol: CellProtocol<State, StateView, Event, Effect>;
+  activation?: CellActivationOptions<Effect, Event, Progress>;
 }>;
 
 export type CellStateReadRequest<State> = Readonly<{
   cellId: CellId;
+  subject: PrincipalId;
   protocolRevision: CellProtocolRevision;
-  stateCodec: Codec<State>;
+  stateCodec: CellCodec<State>;
   at?: CellSequence;
 }>;
 
@@ -446,33 +470,37 @@ export type CellStateReadOutcome<State> =
   | Readonly<{ kind: 'found'; sequence: CellSequence; state: State }>
   | Readonly<{ kind: 'not-found'; cellId: CellId }>
   | Readonly<{ kind: 'restore-refused'; refusal: CellRestoreRefusal }>
-  | Readonly<{ kind: 'unavailable'; failure: CellHostFailure }>;
+  | Readonly<{ kind: 'authority-refused'; refusal: AuthorityRefusal<CellReadAction> }>
+  | Readonly<{ kind: 'unavailable'; failure: PublicError }>;
 
-export type OpenedCell<StateView, Event, Effect> = Readonly<{
+export type OpenedCell<StateView, Event, Progress extends JsonValue = JsonValue> = Readonly<{
   kind: 'opened';
-  handle: CellHandle<StateView, Event, Effect>;
+  handle: CellHandle<StateView, Event, Progress>;
 }>;
 
-export type CellCreateOutcome<StateView, Event, Effect> =
-  | OpenedCell<StateView, Event, Effect>
+export type CellCreateOutcome<StateView, Event, Progress extends JsonValue = JsonValue> =
+  | OpenedCell<StateView, Event, Progress>
   | Readonly<{ kind: 'already-exists'; cellId: CellId }>
-  | Readonly<{ kind: 'unavailable'; failure: CellHostFailure }>;
+  | Readonly<{ kind: 'authority-refused'; refusal: AuthorityRefusal<CellCreateAction> }>
+  | Readonly<{ kind: 'unavailable'; failure: PublicError }>;
 
-export type CellAttachOutcome<StateView, Event, Effect> =
-  | OpenedCell<StateView, Event, Effect>
+export type CellAttachOutcome<StateView, Event, Progress extends JsonValue = JsonValue> =
+  | OpenedCell<StateView, Event, Progress>
   | Readonly<{ kind: 'not-found'; cellId: CellId }>
   | Readonly<{ kind: 'restore-refused'; refusal: CellRestoreRefusal }>
-  | Readonly<{ kind: 'unavailable'; failure: CellHostFailure }>;
+  | Readonly<{ kind: 'active-elsewhere'; retryAfter: Timestamp }>
+  | Readonly<{ kind: 'authority-refused'; refusal: AuthorityRefusal<CellAttachAction> }>
+  | Readonly<{ kind: 'unavailable'; failure: PublicError }>;
 
 export interface CellHost extends OwnedHandle<CellHostCloseEvidence> {
-  create<State, StateView, Event, Effect>(
-    request: CellCreateRequest<State, StateView, Event, Effect>,
+  create<State, StateView, Event, Effect, Progress extends JsonValue = JsonValue>(
+    request: CellCreateRequest<State, StateView, Event, Effect, Progress>,
     grant: GrantRef<CellCreateAction>,
-  ): Promise<CellCreateOutcome<StateView, Event, Effect>>;
-  attach<State, StateView, Event, Effect>(
-    request: CellAttachRequest<State, StateView, Event, Effect>,
+  ): Promise<CellCreateOutcome<StateView, Event, Progress>>;
+  attach<State, StateView, Event, Effect, Progress extends JsonValue = JsonValue>(
+    request: CellAttachRequest<State, StateView, Event, Effect, Progress>,
     grant: GrantRef<CellAttachAction>,
-  ): Promise<CellAttachOutcome<StateView, Event, Effect>>;
+  ): Promise<CellAttachOutcome<StateView, Event, Progress>>;
   readState<State>(
     request: CellStateReadRequest<State>,
     grant: GrantRef<CellReadAction>,
@@ -480,15 +508,51 @@ export interface CellHost extends OwnedHandle<CellHostCloseEvidence> {
 }
 ```
 
+The raw protocol keeps every migration boundary independent. Most JSON-backed
+applications do not need to repeat that wiring. `defineJsonCellProtocol()`
+accepts one application revision, product-neutral state, event, and effect
+codecs, a Program, a durability requirement, and an optional public projection.
+It derives inspectable `/program`, `/projection`, `/state`, `/state-view`,
+`/event`, and `/effect` bindings. A caller moves to the raw `CellProtocol` when
+those pieces need separate migration schedules. The convenience does not weaken
+or erase any stored compatibility check.
+
+A trusted single-service process can use `createCellServiceAuthority({ hostId })`
+to create one real in-memory Authority ledger, one service Principal, and the
+five host-wide Cell grant references. The CellHost still verifies every
+operation. Multi-tenant applications, externally issued grants, and durable
+revocation provide their own `AuthorityBroker<CellAction>` and narrower grants.
+AWS credentials remain transport credentials and never become Cell authority.
+
+The primary trusted-service path binds that policy once in a `CellService`.
+Its `create`, `attach`, `readState`, `dispatch`, and optional recovery methods
+do not repeat a subject and action grant, while the underlying CellHost still
+checks them immediately before protected work. `s3Cells()` constructs and owns
+this composition, including cleanup. `s3CasCells()` remains the lower S3 host
+for per-request identity, narrower grants, durable revocation, or independent
+component ownership. Convenience removes wiring; it does not collapse the
+authority boundary.
+
 Create binds Cell identity and idempotency to exact Program, projection, codec,
 and durability revisions. Attach validates those revisions against stored
-state before returning the hot handle. Missing state, incompatible restore,
-unavailability, and duplicate creation are tagged outcomes that cannot expose
-a partially restored handle. A broken host protocol or invalid local
-construction may reject before a handle exists. Creation, attachment, full
-state reads, and dispatch each verify their exact current authority. The full
-state query is finite and does not turn an unbounded aggregate into live UI
-state.
+state before returning the hot handle and processes an overdue durable wake as
+part of its recovery barrier. Missing state, incompatible restore,
+unavailability, active ownership, and duplicate creation are tagged outcomes
+that cannot expose a partially restored handle. A broken host protocol or
+invalid local construction may reject before a handle exists. Creation,
+attachment, full state reads, dispatch, and S3 recovery discovery each verify
+their exact current authority. The full state query is finite and does not turn
+an unbounded aggregate into live UI state.
+
+An S3 service process periodically calls the bounded, authorized
+`discoverRecoverable()` operator surface. It receives only Cell IDs whose lease
+expired while a wake is due or effect work remains unfinished. The application
+still supplies the exact protocol and effect adapter. A raw CellHost call also
+supplies the subject and grant; a CellService supplies the identity bound at
+composition. Bucket listing cannot fabricate code or authority. A claimed
+attempt under an expired fence is redriven with the same deterministic effect
+ID and a higher attempt number. External delivery remains at least once unless
+the destination honors that ID.
 
 ### Thread, Turn, and Item
 
@@ -2139,7 +2203,7 @@ Infrastructure applications can assemble the same pieces directly:
 ```ts
 import { composeArcher } from '@archer/agent';
 import { borrowed, diagnosticHub, owned } from '@archer/core';
-import { bucketSqliteCells } from '@archer/core/cells/bucket-sqlite';
+import { s3CasCells } from '@archer/core/cells/s3';
 import { fileTreeStore } from '@archer/files/fs';
 import { gitWorkspaces } from '@archer/files/git';
 import { pinoSink } from '@archer/observability/pino';
@@ -2151,8 +2215,17 @@ const diagnostics = await diagnosticHub({
   sinks: [owned(await pinoSink({ level: 'info' }))],
 });
 
+const cells = await s3CasCells({
+  ...cellOptions,
+  bucket: process.env.ARCHER_CELL_BUCKET,
+  prefix: 'archer/cells',
+  stateLimitBytes: 256 * 1024,
+  maxHeadsPerScan: 100,
+  transport: { type: 'managed' },
+});
+
 await using archer = await composeArcher({
-  cells: owned(await bucketSqliteCells(cellOptions)),
+  cells: owned(cells),
   models: borrowed(modelRouter),
   files: owned(fileStore.value),
   materializers: borrowed(materializerRegistry),
@@ -2622,19 +2695,19 @@ The contract graph still points inward, but source modules and npm packages are
 different decisions. V1 publishes capability families rather than one package
 per interface or first-party adapter:
 
-| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                                                                                                                                | Intentional package dependencies                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/embedded-sqlite`, `/cells/bucket-sqlite`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics`                                                                                 | RxJS and standard Node modules used by selected runtime modules; React is an optional peer for `/react` |
-| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/workspace`, `/workspace/conformance`, `/scratchpad`, `/scratchpad/conformance`, `/materializer`, `/materializer/directory`, `/materializer/conformance`; later `/s3`, `/git`, `/materializer/docker`, `/materializer/qemu` | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                   |
-| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                                                                                                                           | `core`; AI SDK bundled for the supported first-party adapter                                            |
-| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                                                                                                                                | `core`, `files`, `models`                                                                               |
-| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                                                                                                  | `core`, `files`; backend-specific optional peers                                                        |
-| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                       |
-| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                                                                                                            | Selected capability and observability packages                                                          |
-| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                                                                                                                           | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                             |
-| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                                                                                                                             | `core`, `agent`                                                                                         |
-| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                                                                                                                                        | Protocol packages under test                                                                            |
-| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                                                                                                                             | `agent`, `presets`, `transports`, `observability`                                                       |
+| Package                 | Root responsibility                                                                                                                                                           | First-party subpaths                                                                                                                                                                                                                | Intentional package dependencies                                                                                                    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/conformance`, `/cells/embedded-sqlite`, `/cells/s3`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics`                                                                      | RxJS and standard Node modules used by selected runtime modules; React and AWS SDK v3 are optional peers for their adapter subpaths |
+| `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/workspace`, `/workspace/conformance`, `/scratchpad`, `/scratchpad/conformance`, `/materializer`, `/materializer/directory`, `/materializer/conformance`; later `/s3`, `/git`, `/materializer/docker`, `/materializer/qemu` | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                                               |
+| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                                                                                                                           | `core`; AI SDK bundled for the supported first-party adapter                                                                        |
+| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                                                                                                                                | `core`, `files`, `models`                                                                                                           |
+| `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                                                                                                  | `core`, `files`; backend-specific optional peers                                                                                    |
+| `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                                                   |
+| `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                                                                                                            | Selected capability and observability packages                                                                                      |
+| `@archer/observability` | Managed observability configuration and non-authoritative signal projections                                                                                                  | `/pino`, `/opentelemetry`                                                                                                                                                                                                           | `core`; Pino bundled, OpenTelemetry SDK as an optional peer                                                                         |
+| `@archer/transports`    | Authentication, atomic attachment, and codecs that project retained handles across process boundaries                                                                         | `/http`, `/sse`, `/websocket`, `/stdio`                                                                                                                                                                                             | `core`, `agent`                                                                                                                     |
+| `@archer/testing`       | Deterministic clocks, temporal fakes, stores, adapters, schedules, fault models, scenario fixtures, and conformance runners                                                   | Shared support from the root                                                                                                                                                                                                        | Protocol packages under test                                                                                                        |
+| `@archer/cli`           | The supported command-line application over public `TaskRun` and preset contracts                                                                                             | executable exports only                                                                                                                                                                                                             | `agent`, `presets`, `transports`, `observability`                                                                                   |
 
 Each root exports the capability contract and common factories. A subpath
 exports one implementation and its exact configuration. Protocol conformance
@@ -2674,7 +2747,7 @@ independently against the protocol and conformance version they implement.
 | Provider integration           | AI SDK at the adapter edge, SDK retries disabled                                                                 |
 | Tool schemas                   | JSON Schema 2020-12, including boolean schemas, with Ajv 8 behind validation ports                               |
 | Embedded durability            | `node:sqlite`, with no ORM in the journal or outbox path                                                         |
-| Distributed reference host     | SQLite snapshots plus conditional object-store operations and a mandatory live semantics probe                   |
+| Distributed reference host     | Direct immutable object revisions behind a small conditional S3 head, with a mandatory live semantics probe      |
 | S3-compatible storage          | AWS SDK v3 inside the S3 adapter                                                                                 |
 | File identity                  | Raw SHA-256 blobs and hierarchical `archer-tree-v1` directory nodes with permanent canonical bytes               |
 | Workspace source and promotion | Git CLI inside the Git adapter; no Git value in ChangeSet contracts                                              |
@@ -2731,9 +2804,12 @@ or hostile adapter. Runtime codecs, verifiers, Programs, and services validate:
 Each replaceable boundary publishes a versioned conformance suite. The initial
 suites cover:
 
-- CellHost revision binding, create idempotency, attach, restore refusal, and
-  unavailability; Cell acknowledgement, ownership races, fencing, redrive,
-  wakes, cancellation, ambiguous publication, and late completion;
+- the published CellHost v1 suite covers generation-zero creation, duplicate
+  prevention, acknowledged hot state, exact command replay and conflicting key
+  preservation, revision-bound restore, restart replay, expired-lease fencing,
+  and retained release; focused first-party cases additionally cover overdue
+  wakes, acknowledged effect claim and result re-entry, borrowed S3 ownership,
+  stranded-work discovery, and storage-size refusal;
 - object-store conditional create and update, immutable reads, retired token
   rejection, and the live startup probe;
 - Cell, Thread, Workspace, Scratchpad, sandbox, and TaskRun snapshot identity,
@@ -2841,7 +2917,8 @@ V1 supports:
   the AI SDK adapter;
 - exact model, prompt, skill, and TypeScript or JavaScript tool revisions,
   progressive disclosure, and between-Turn activation;
-- embedded SQLite Cells and the bucket snapshot reference host;
+- embedded SQLite Cells and direct S3 CAS Cells with bounded authorized recovery
+  discovery;
 - immutable regular-file trees, filesystem stores, hot private Workspace and
   Scratchpad handles, live Materializers and ingestion, and ChangeSets;
 - QEMU/HVF on the verified x86_64 macOS profile;
@@ -2906,10 +2983,11 @@ managed demo:
    AI SDK code-editor and notebook-agent examples; no standalone Materializer
    example is required until a sandbox gives the physical view a meaningful
    execution workflow.
-5. **Cells.** Extract the pure lifecycle Program and retained SQLite, outbox,
-   snapshot, fencing, wake, and RxJS activation mechanisms into embedded and
-   bucket `CellHost` implementations. Bind Program and state-projection
-   revisions at create and restore. Add the live storage semantics probe.
+5. **Cells.** Publish exact canonical Cell codecs, revision-bound Programs,
+   acknowledged effects, fencing, wakes, hot activation, and public conformance.
+   Ship worker-isolated embedded SQLite and direct immutable-revision S3 CAS
+   hosts, the mandatory live storage probe, bounded authorized recovery
+   discovery, and the runnable durable-webhook service.
 6. **Models, prompts, and resources.** Replace SDK-shaped durable values,
    implement one-step AI SDK live operations, finite prompt compilation,
    resource build and admission, replayable resource lifecycle, profiles,

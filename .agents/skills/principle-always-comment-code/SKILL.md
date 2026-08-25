@@ -17,6 +17,14 @@ constructors, functions, methods, accessors, and named callbacks. Document
 parameters and returned values where their contract or assumptions are not fully
 expressed by the language.
 
+Runnable application examples use a narrower rule because ceremonial comments
+make the product harder to understand. Under `examples/`, document the file,
+exports, domain objects, and integration, policy, failure, or lifecycle
+boundaries. Obvious local variables, small callbacks, and control-flow helpers
+do not need comments when their names and bodies already explain them. Apply
+`principle-example-adoption` there. Use application language and explain what a
+developer needs to know or preserve, not how Archer's internals work.
+
 ## Preserve the author's reasoning
 
 Write at least one useful line for every required item. Add more when one line
@@ -88,7 +96,8 @@ Before finishing:
 
 1. Inspect every changed source file from top to bottom.
 2. Account for the file and every named declaration and member, including private
-   and locally scoped declarations.
+   and locally scoped declarations. For runnable examples, apply the documented
+   example exception and reject ceremonial comments instead.
 3. Reject comments that merely restate code or leave assumptions implicit.
 4. For algorithms, compare the documentation with malformed inputs, boundary
    behavior, ordering, mutation, and complexity. Record every assumption the

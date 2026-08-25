@@ -27,6 +27,33 @@ function normalizeDurableEvent(event: DurableEvent): DurableEvent {
 }
 
 describe('ReplayableEventStream', () => {
+  it('restores durable history before observation and continues cursor order', async () => {
+    /** Represents values restored from durable storage before activation is visible. */
+    const initialEvents = [{ name: 'one' }, { name: 'two' }] as const;
+    /** Creates a source whose first live cursor must continue after restored history. */
+    const source = createReplayableEventSource({
+      source: 'test',
+      streamId: 'restored',
+      epoch: 'stable-epoch',
+      retentionItems: 8,
+      initialEvents,
+      eventEncoding: durableEventEncoding,
+    });
+
+    /** Replays restored values through the same bounded public contract as live values. */
+    const subscription = source.subscribe({ after: source.cursorCodec.encode(0n) });
+    /** Owns the pull cursor independently from the subscription lifecycle. */
+    const iterator = subscription[Symbol.asyncIterator]();
+    expect(await nextValue(iterator)).toEqual(expect.objectContaining({ value: { name: 'one' } }));
+    expect(await nextValue(iterator)).toEqual(expect.objectContaining({ value: { name: 'two' } }));
+    expect(source.cursorCodec.decode(source.currentCursor())).toEqual({
+      ok: true,
+      value: expect.objectContaining({ offset: '2' }),
+    });
+
+    await subscription.close();
+    await source.close();
+  });
   it('rejects an empty event protocol revision before constructing a source', () => {
     expect(() =>
       createReplayableEventSource<DurableEvent, 'task'>({

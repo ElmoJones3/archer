@@ -68,6 +68,7 @@ try {
     resolve(fixtureRoot, 'consumer.ts'),
     `import { Result } from '@archer/core';
 import type { AuthorityBroker, ProtectedAction } from '@archer/core/authority';
+import type { CellHost } from '@archer/core/cells';
 import { transientEventSource } from '@archer/core/stream';
 
 type Progress = Readonly<{ step: number }>;
@@ -75,6 +76,7 @@ type ReadScope = Readonly<{ kind: 'read'; target: string }>;
 type ReadAction = ProtectedAction<'read', ReadScope>;
 
 declare const authority: AuthorityBroker<ReadAction>;
+declare const cells: CellHost;
 
 const source = transientEventSource<Progress>()({
   source: 'package-check',
@@ -89,6 +91,7 @@ const source = transientEventSource<Progress>()({
 const result = Result.ok(source);
 void result;
 void authority;
+void cells;
 `,
   );
   /** Uses an ES2022 consumer to prove disposable declaration references are self-contained. */
@@ -118,6 +121,9 @@ void authority;
     '@archer/core',
     '@archer/core/authority',
     '@archer/core/authority/conformance',
+    '@archer/core/cells',
+    '@archer/core/cells/conformance',
+    '@archer/core/cells/embedded-sqlite',
     '@archer/core/diagnostics',
     '@archer/core/diagnostics/conformance',
     '@archer/core/ownership',
@@ -151,7 +157,7 @@ await import('@archer/core');`,
     fixtureRoot,
   );
 
-  /** Reads the installed manifest to ensure this fixture did not acquire React implicitly. */
+  /** Reads the installed manifest to ensure optional adapter peers stayed explicit. */
   const installedManifest = JSON.parse(
     await readFile(resolve(fixtureRoot, 'node_modules/@archer/core/package.json'), 'utf8'),
   );
@@ -169,6 +175,9 @@ await import('@archer/core');`,
   if (installedManifest.peerDependenciesMeta?.react?.optional !== true) {
     throw new Error('Packed core did not preserve React as an optional peer');
   }
+  if (installedManifest.peerDependenciesMeta?.['@aws-sdk/client-s3']?.optional !== true) {
+    throw new Error('Packed core did not preserve the AWS SDK as an optional peer');
+  }
   /** The optional framework subpath must fail clearly when its peer is absent. */
   let missingReact = false;
   try {
@@ -180,13 +189,29 @@ await import('@archer/core');`,
   }
   if (!missingReact) throw new Error('React subpath did not identify its absent optional peer');
 
-  /** Proves importing one product-neutral subpath does not initialize another adapter. */
+  /** The optional S3 adapter must fail clearly when its SDK peer is absent. */
+  let missingAwsSdk = false;
+  try {
+    await run(
+      process.execPath,
+      ['--input-type=module', '--eval', "await import('@archer/core/cells/s3');"],
+      fixtureRoot,
+    );
+  } catch (error) {
+    /** Preserves only the fact that Node named the missing optional dependency. */
+    const output = `${error?.stdout ?? ''}\n${error?.stderr ?? ''}\n${error?.message ?? ''}`;
+    missingAwsSdk = output.includes('@aws-sdk/client-s3');
+  }
+  if (!missingAwsSdk) throw new Error('S3 Cell subpath did not identify its absent optional AWS SDK peer');
+
+  /** Proves product-neutral subpaths remain usable without either optional adapter peer. */
   await run(
     process.execPath,
     [
       '--input-type=module',
       '--eval',
       `await import('@archer/core/stream');
+await import('@archer/core/cells');
 if ([...process.moduleLoadList].some((entry) => entry.includes('react'))) {
   throw new Error('Stream import initialized the React adapter');
 }`,
