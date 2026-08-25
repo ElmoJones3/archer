@@ -61,6 +61,26 @@ A replaceable durability service that creates or restores Cells under exact
 Program, projection, codec, and durability revisions and returns a retained
 Cell handle.
 
+### CellService
+
+An owned application-facing CellHost whose trusted process identity and grants
+are bound once at construction. It removes repeated authorization arguments
+from ordinary service code without weakening the checks performed by the host.
+Applications that need per-request identity or narrower policy use CellHost
+directly.
+
+### Conditional object store
+
+The storage-neutral port for reading immutable bytes, creating only while a key
+is absent, and replacing only while an opaque current version remains valid.
+The version is storage evidence, not a content digest.
+
+### Recoverable Cell
+
+A Cell whose ownership lease expired while a wake is due or acknowledged effect
+work remains unfinished. Recovery discovery reveals its identity, not its state
+or authority to attach.
+
 ### Thread
 
 A durable agent conversation and task history composed of Turns and ordered

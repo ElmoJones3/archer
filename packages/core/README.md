@@ -29,13 +29,18 @@ The package is ESM-only; CommonJS `require()` is not supported.
 - `@archer/core/diagnostics` provides record codecs and the diagnostic hub.
 - `@archer/core/authority` provides action-owned scopes, immutable grants and
   revocations, current verification, and the ephemeral memory reference ledger.
+- `@archer/core/cells` provides revision-bound Programs, canonical Cell codecs,
+  hot retained activations, acknowledged effects, wakes, leases, and fencing.
+- `@archer/core/cells/embedded-sqlite` and `@archer/core/cells/s3` provide the
+  worker-isolated same-filesystem host and direct node-independent S3 CAS host.
 - `@archer/core/react` provides `useLiveState` over React's external-store
   contract.
 - `@archer/core/stream/conformance` and
   `@archer/core/diagnostics/conformance` provide versioned, framework-neutral
   compatibility suites. `@archer/core/authority/conformance` proves current
   grant, attenuation, revocation, administration, idempotency, and lifecycle
-  semantics.
+  semantics. `@archer/core/cells/conformance` proves creation, acknowledgement,
+  retry identity, restoration, fencing, replay, and retained release.
 - `@archer/core/stream/testing` provides deterministic scheduling and promise
   controls for temporal tests.
 
@@ -247,6 +252,47 @@ diagnostic unavailability never changes the domain outcome. The memory ledger
 makes no durability claim. Durable adapters implement the same ports and run
 `@archer/core/authority/conformance` against each guarantee-bearing
 configuration.
+
+## Cells
+
+A Cell runs one deterministic `Program<State, Event, Effect>` behind a retained
+hot handle. `dispatch()` returns only after the event, next state, effect
+intents, wake, sequence, and observation became durable under the current fence.
+The handle publishes acknowledged state through `LiveState`, durable facts
+through cursor replay, and lossy effect progress through a separate transient
+stream. Subscribing starts nothing.
+
+`defineJsonCellProtocol()` is the common construction path. It derives the
+Program, projection, and canonical JSON codec bindings from one application
+revision while keeping the lower `CellProtocol` available for independent
+migrations. `createCellServiceAuthority()` creates explicit host-wide grants
+for one trusted process; applications with tenant or durable policy provide
+their own Authority broker and grants.
+
+`CellService` binds those trusted-process permissions once, so application code
+does not repeat a Principal and grant for every operation. `s3Cells()` is the
+primary S3 service path and owns the host, service policy, and their cleanup.
+`s3CasCells()` keeps the raw host available when callers need per-request
+identity, narrower grants, durable revocation, or separate component ownership.
+
+`embeddedSqliteCells()` acknowledges one SQLite transaction and isolates Node's
+synchronous SQLite connection in an owned worker by default. Both `s3Cells()`
+and `s3CasCells()` write an immutable revision and acknowledge only after
+replacing a small S3 head under its exact current ETag. They perform a live
+conditional-write probe before returning. The S3 adapter uses AWS SDK v3's
+standard Node credential chain, or an injected client marked explicitly as
+borrowed or owned.
+
+Both hosts require current action-specific Authority grants for create, attach,
+read, and dispatch. Direct S3 recovery discovery also requires its own current
+grant and returns only recoverable Cell IDs. The replacement process still
+supplies the exact Program, codecs, projection, effect adapter, and Principal.
+Object storage cannot manufacture executable code or permission.
+
+The runnable [durable webhook service](../../examples/cells/durable-webhook)
+sends signed customer events, reports status through Server-Sent Events, and
+continues unfinished retries from S3 after the service restarts. Its local
+receiver rejects two requests so a developer can watch the behavior directly.
 
 ## Diagnostics
 

@@ -17,6 +17,49 @@ export default [
   },
   ...archer,
   {
+    files: ['examples/**/*.{js,jsx,mjs,cjs,ts,tsx}'],
+    rules: {
+      // Runnable examples keep documentation on public and application-defining
+      // boundaries without burying the program under comments on obvious locals.
+      'jsdoc/require-description': [
+        'error',
+        {
+          contexts: [
+            'ExportNamedDeclaration > ClassDeclaration',
+            'ExportNamedDeclaration > FunctionDeclaration',
+            'ExportNamedDeclaration > TSInterfaceDeclaration',
+            'ExportNamedDeclaration > TSTypeAliasDeclaration',
+            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+          ],
+        },
+      ],
+      'jsdoc/require-jsdoc': [
+        'error',
+        {
+          contexts: [
+            'ExportNamedDeclaration > ClassDeclaration',
+            'ExportNamedDeclaration > FunctionDeclaration',
+            'ExportNamedDeclaration > TSInterfaceDeclaration',
+            'ExportNamedDeclaration > TSTypeAliasDeclaration',
+            'ExportNamedDeclaration[declaration.type="VariableDeclaration"]',
+          ],
+          require: {
+            ArrowFunctionExpression: false,
+            ClassDeclaration: false,
+            ClassExpression: false,
+            FunctionDeclaration: false,
+            FunctionExpression: false,
+            MethodDefinition: false,
+          },
+        },
+      ],
+      // TypeScript owns parameter and return shapes in examples. Their prose
+      // should explain application consequences, not repeat the signature.
+      'jsdoc/require-param': 'off',
+      'jsdoc/require-returns': 'off',
+    },
+  },
+  {
     files: ['packages/**/*.{js,jsx,mjs,cjs,ts,tsx}'],
     ignores: ['packages/observability/src/pino.{js,ts}', 'packages/observability/src/pino/**'],
     rules: {

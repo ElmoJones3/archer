@@ -8,6 +8,7 @@
     "build": "turbo run build",
     "check:licenses": "node scripts/check-package-licenses.mjs",
     "example:core": "pnpm --filter @archer/example-core-documentation-indexer... build && pnpm --filter @archer/example-core-documentation-indexer demo",
+    "example:cells:webhook": "pnpm --filter @archer/example-cells-durable-webhook... build && pnpm --filter @archer/example-cells-durable-webhook demo",
     "example:files:cache": "pnpm --filter @archer/example-files-local-snapshot-cache... build && pnpm --filter @archer/example-files-local-snapshot-cache demo",
     "example:files:code-editor": "pnpm --filter @archer/example-files-vercel-ai-sdk-code-editor... build && pnpm --filter @archer/example-files-vercel-ai-sdk-code-editor demo",
     "example:files:fingerprint": "pnpm --filter @archer/example-files-directory-fingerprint... build && pnpm --filter @archer/example-files-directory-fingerprint demo",

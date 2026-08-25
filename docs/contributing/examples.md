@@ -1,9 +1,10 @@
 # Example delivery policy
 
-Examples let developers judge Archer through applications they recognize. They
-are not substitutes for package tests, conformance suites, or internal design
-documents. This policy keeps that distinction enforceable as the repository
-grows.
+Examples advertise the work Archer makes easier. They let application
+developers judge the library through programs they recognize, run, and copy.
+They are not substitutes for package tests, conformance suites, or internal
+design documents. This policy keeps that distinction enforceable as the
+repository grows.
 
 ## Directory structure
 
@@ -14,7 +15,7 @@ examples/
   core/
   observability/
   files/
-  cell/
+  cells/
   agent/
 ```
 
@@ -42,6 +43,24 @@ developer can copy into an existing application. Directory and package names
 describe that job rather than an Archer type or guarantee whenever a clear job
 name exists.
 
+The primary path assumes expertise in the application's public interfaces, not
+in Archer's implementation or distributed-systems literature. Comments use the
+application's vocabulary and explain consequences a developer needs to preserve.
+Terms such as compare-and-swap, write-ahead log, fencing, and idempotency belong
+only where the developer must act on them. Package source and architecture docs
+carry the deeper explanation.
+
+An example must show the reason to adopt the feature. Recovery should be easy to
+observe after a restart. A reactive API should produce useful live application
+updates. Isolation should visibly protect the caller's data. Do not ask the
+reader to infer the value from configuration or internal evidence.
+
+Long repetitive setup is a product finding, not unavoidable example boilerplate.
+When Archer can safely own the policy, add a public factory, preset, or bound
+application object and use it in the primary path. Keep lower contracts available
+in package documentation or an explicitly advanced example. Do not hide missing
+ergonomics in an example-local helper that every caller would need to copy.
+
 The runnable entry point must cross the real boundary named by the example. An
 AI SDK example lets the AI SDK run the model and dispatch tools. An HTTP example
 listens for HTTP requests. A database example executes against the database. An
@@ -58,6 +77,11 @@ Credentials, network access, long-lived processes, and caller-supplied files are
 valid application requirements. The README states them plainly and gives one
 copyable command. CI convenience must never remove the behavior that makes the
 example real.
+
+An example does not call a remote fallback "live" without naming how it stays
+current. Poll intervals, per-client reads, routing assumptions, and the point at
+which a shared notification transport becomes appropriate are application costs
+the reader must be able to see.
 
 An external model, service, or database is also a disclosure boundary. The
 example states which caller data crosses it, applies safe default admission when
@@ -77,7 +101,7 @@ Each example must:
 - return useful data before ephemeral dependencies close, or retain an explicit
   reachable owner for every reference returned to the caller;
 - comment application policy, integration boundaries, and lifecycle obligations
-  beside the code;
+  beside the code without documenting every obvious local variable or callback;
 - keep secrets in documented environment variables or external secret stores;
 - participate in root formatting, lint, typecheck, build, and test commands; and
 - keep its runnable entry point separate from its automated tests.
@@ -95,5 +119,7 @@ manufacture failures merely to satisfy a checklist. Example output is for the
 person running the application. Machine-oriented proof stays in tests and
 conformance suites.
 
-Before review, ask one blunt question: would a developer copy this program to do
-something, or only read it to verify Archer works? Only the first belongs here.
+Before review, ask two blunt questions. Would a developer copy this program to
+do something, or only read it to verify Archer works? Does the program make the
+benefit visible, or ask the reader to trust the architecture? Only a useful,
+visible application belongs here.

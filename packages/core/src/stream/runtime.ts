@@ -93,6 +93,9 @@ export type ReplayableEventSourceOptions<Event, Source extends string> = Readonl
   /** Limits the number of envelopes available for later replay. */
   retentionItems: number;
 
+  /** Seeds already durable values before the source becomes observable. */
+  initialEvents?: readonly Event[];
+
   /** Binds event ownership, byte limits, and cursors to one protocol revision. */
   eventEncoding: EventEncoding<Event>;
 
@@ -954,6 +957,9 @@ export function createReplayableEventSource<Event, Source extends string>(
       await source.close();
     },
   };
+
+  /** Restores acknowledged history through ordinary admission before observers can attach. */
+  for (const event of options.initialEvents ?? []) source.publish(event);
 
   return Object.freeze(source);
 }

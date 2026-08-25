@@ -4,6 +4,10 @@ packages:
   - '!packages/cell-runtime'
   - '!packages/sandbox-runtime'
 
+allowBuilds:
+  # Swagger UI is a static browser bundle; its analytics installer is unnecessary.
+  '@scarf/scarf': false
+
 # Package versions must spend 14 days in the registry before they are eligible
 # for resolution. This applies to direct and transitive dependencies.
 minimumReleaseAge: 20160

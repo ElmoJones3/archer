@@ -66,6 +66,22 @@ The service prints a `curl` command after it starts.
 
 [Read the observed word-count service example](observability/word-count-service)
 
+## AWS credentials and an S3 bucket required
+
+### Send customer webhooks across process restarts
+
+Send signed application events to customer endpoints, watch their status live,
+and continue unfinished retries from S3 after the service restarts.
+
+```sh
+export ARCHER_WEBHOOK_SIGNING_SECRET="local-demo-secret"
+export ARCHER_WEBHOOK_BUCKET="my-existing-bucket"
+export AWS_REGION="us-west-2"
+pnpm example:cells:webhook -- service
+```
+
+[Read the durable webhook example](cells/durable-webhook)
+
 ## OpenAI API key required
 
 These examples make real model calls through the Vercel AI SDK. Set

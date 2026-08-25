@@ -26,6 +26,22 @@
       "types": "./dist/authority/conformance.d.ts",
       "import": "./dist/authority/conformance.js"
     },
+    "./cells": {
+      "types": "./dist/cells/index.d.ts",
+      "import": "./dist/cells/index.js"
+    },
+    "./cells/embedded-sqlite": {
+      "types": "./dist/cells/embedded-sqlite/index.d.ts",
+      "import": "./dist/cells/embedded-sqlite/index.js"
+    },
+    "./cells/conformance": {
+      "types": "./dist/cells/conformance.d.ts",
+      "import": "./dist/cells/conformance.js"
+    },
+    "./cells/s3": {
+      "types": "./dist/cells/s3/index.d.ts",
+      "import": "./dist/cells/s3/index.js"
+    },
     "./ownership": {
       "types": "./dist/ownership.d.ts",
       "import": "./dist/ownership.js"
@@ -74,6 +90,7 @@
   },
   "devDependencies": {
     "@archer/eslint": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1106.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
@@ -91,9 +108,13 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.1106.0",
     "react": "^18.0.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    },
     "react": {
       "optional": true
     }
