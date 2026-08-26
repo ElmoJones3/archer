@@ -1,0 +1,26 @@
+/** @file Publishes Agent Skill import and progressive disclosure behavior. */
+
+export {
+  MAX_SKILL_BYTES,
+  MAX_SKILL_FILES,
+  Skill,
+  fileStoreSkillContentReader,
+  importSkillDirectory,
+  loadSkillInstructions,
+  loadSkillSupport,
+  reimportSkillDirectory,
+  skillRef,
+  skillSummary,
+  type ImportSkillDirectoryInput,
+  type LoadedSkillInstructions,
+  type LoadedSkillSupport,
+  type SkillContentReader,
+  type SkillCreationContext,
+  type SkillId,
+  type SkillImportDependencies,
+  type SkillManifest,
+  type SkillRef,
+  type SkillRevisionContext,
+  type SkillRevisionId,
+  type SkillSummary,
+} from '../skills/index.js';

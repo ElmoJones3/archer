@@ -223,13 +223,91 @@ not itself a terminal task or Turn outcome.
 
 ### Resource
 
-A named model, prompt, skill, or tool whose usable identity is a specific
-immutable revision.
+A named Model, Prompt, Skill, BudgetPolicy, or later Tool whose usable identity
+is a specific immutable revision.
+
+### Model
+
+A credential-free, provider-discriminated Resource describing one model target
+and the generated-output ceiling an application is willing to request.
+
+### ModelStepRequest
+
+One admitted, provider-neutral model call pinned to an exact Model and optional
+ResourceSet. It is a command for one attempt, not a conversation loop.
+
+### ModelRouter
+
+The retained Models boundary that resolves admitted ModelStepRequests to bound
+provider adapters and starts one finite live attempt.
+
+### Prompt
+
+A Resource that owns a parameterized text template, its request placement, and
+its declared variables after any external source has been acquired.
+
+### PromptContribution
+
+Rendered request content tied to one exact Prompt revision. It is behavior
+evidence, not freely constructible text or a transport DTO.
+
+### Skill
+
+A Resource representing one imported Agent Skills directory rooted at
+`SKILL.md`, including its immutable content identity and progressive-disclosure
+content.
+
+### BudgetPolicy
+
+A Resource declaring reusable generated-output and elapsed-wall-time ceilings
+for model-step preparation. Live usage and settlement belong to a later durable
+owner.
+
+### BudgetAllocation
+
+The effective output ceiling and optional deadline derived for one prepared
+model step from the applicable BudgetPolicy and enclosing limits.
+
+### AgentProfile
+
+A reusable Archer object that selects exact behavior-bearing Model, Prompt,
+Skill, and BudgetPolicy revisions for later binding.
 
 ### ResourceSet
 
-The exact immutable selection of admitted resource revisions compiled for a
-workspace and profile.
+The exact immutable selection of Resource revisions bound from one AgentProfile
+under either local application policy or reviewed admissions.
+
+### ResourceSession
+
+The finite application-facing preparation boundary bound to one ResourceSet. It
+consumes selected behavior to produce an admitted ModelStepRequest and its
+BudgetAllocation.
+
+### ResourceProposal
+
+An attributed fact submitting one exact Resource revision for independent
+review.
+
+### ResourceReview
+
+An independent approve-or-reject fact over one exact ResourceProposal.
+
+### ResourceAdmission
+
+A fact making one exactly approved Resource revision eligible for reviewed
+ResourceSet compilation.
+
+### VerifiedResourceAdmission
+
+Process-local evidence that a complete Resource proposal, review, and admission
+chain passed either ordinary creation or an application-owned restoration
+boundary.
+
+### ResourceRevocation
+
+An immutable fact that makes one exact ResourceAdmission ineligible for future
+reviewed compilation without rewriting prior use.
 
 ### Principal
 

@@ -1,0 +1,26 @@
+/** @file Publishes Prompt behavior without transport or hydration internals. */
+
+export {
+  Prompt,
+  composePromptContributions,
+  definePrompt,
+  importPromptFile,
+  promptRef,
+  renderPrompt,
+  revisePrompt,
+  type ComposedPrompt,
+  type ComposePromptContributionsInput,
+  type DefinePromptInput,
+  type ImportPromptFileInput,
+  type PromptContribution,
+  type PromptCreationContext,
+  type PromptId,
+  type PromptImportDependencies,
+  type PromptPlacement,
+  type PromptRef,
+  type PromptRevisionContext,
+  type PromptRevisionId,
+  type PromptSourceFile,
+  type PromptSourceImporter,
+  type RevisePromptInput,
+} from '../prompts/index.js';

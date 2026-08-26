@@ -115,6 +115,18 @@ pnpm example:files:notebook -- /tmp/archer-notes "Draft a release checklist and 
 
 [Read the AI SDK notebook example](files/vercel-ai-sdk-notebook-agent)
 
+### Answer tickets with a reusable support playbook
+
+Load a real Agent Skill directory, render a company Prompt, enforce one reply
+budget, and stream the answer through the Vercel AI SDK.
+
+```sh
+export OPENAI_API_KEY="your_api_key_here"
+pnpm example:resources:support -- "Where is order A-42? Latest scan: shipped yesterday."
+```
+
+[Read the customer support playbook example](resources/customer-support-playbook)
+
 ## How the directories are organized
 
 Examples are grouped by the highest Archer layer they use. A `core` example

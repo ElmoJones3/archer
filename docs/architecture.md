@@ -3,9 +3,11 @@
 Status: v1 construction contract
 
 This document defines the shape Archer is intended to build. It is normative
-about ownership, dependency direction, and guarantees. Names in the conceptual
-TypeScript examples may receive small ergonomic changes during implementation,
-but those changes may not weaken the stated behavior.
+about ownership, dependency direction, guarantees, and the public work those
+guarantees make possible. Conceptual TypeScript APIs may change when a runnable
+application exposes friction or a misplaced responsibility. That discovery is
+an architectural correction, not cosmetic cleanup. It may improve the API
+without weakening the stated behavior or guarantee.
 
 ## Purpose
 
@@ -100,6 +102,15 @@ opinionated prompts, skills, tools, lifecycle, diagnostics, and local storage.
 It still names the model and exact sandbox guarantee, exposes the running work,
 and returns the same evidence as direct composition.
 
+Rigor is an implementation burden Archer accepts, not an entrance exam for its
+users. The ordinary path begins with a job an application developer already
+recognizes. Compare-and-swap, fencing, admission receipts, canonical trees, and
+stream retention remain visible when the caller needs to select or replace
+those guarantees; they do not become mandatory ceremony merely because the
+implementation depends on them. If a realistic example must teach Archer's
+internal control plane before it can perform useful work, the public API is not
+finished.
+
 Optimization should be cheap. A consumer starts with working defaults and
 replaces only the part that matters. First-party capabilities ship in a small
 set of packages with explicit subpath exports. Root modules have no import-time
@@ -185,9 +196,15 @@ The following rules apply at every entry point:
 18. **Make convenience honest.** Managed calls compile defaults into the same
     profiles, resources, grants, handles, and evidence used by direct
     composition.
-19. **Ship proof with the port.** A replaceable contract is incomplete without
+19. **Make domain names earn their meaning.** A schema, codec, immutable record,
+    digest, and round-trip test do not make a behavioral domain concept. A
+    `Skill`, `Prompt`, `Policy`, profile, or similar public owner exposes the
+    legal creation and useful operations its name promises. Transport decoding
+    and hydration remain separate capabilities and cannot manufacture an earned
+    transition through the ordinary application API.
+20. **Ship proof with the port.** A replaceable contract is incomplete without
     codecs, required failure cases, and a versioned conformance suite.
-20. **Ship a real application with the layer.** Every new or materially changed
+21. **Ship a real application with the layer.** Every new or materially changed
     workflow adds or updates a root `examples/<layer>/<scenario>` application. A
     contained contract slice that cannot yet support useful work may ship a
     public conformance suite instead; its first real consumer must use it in that
@@ -206,14 +223,42 @@ sandbox requirements, attestations, file references, Workspace snapshots,
 ChangeSets, cleanup evidence, and conformance reports. They are intended to be
 serialized, validated, hashed, and restored without process identity.
 
-Behavior is exposed as interfaces. Programs, stores, brokers, compilers,
-adapters, services, and retained handles are replaceable contracts. Public
-factories construct validated values and return those interfaces.
+Named domain values are not DTOs with prestigious names. Their owning package
+controls legal creation and exposes the operations and invariants the name
+promises. Archer normally represents immutable domain state as a class with
+closed construction or a branded readonly value with cohesive factories and
+pure modifiers. Neither representation excuses callers from having to
+reconstruct the domain rules themselves.
+
+The ordinary application barrel exposes legal creation and behavior. Public
+transport subpaths expose codecs and JSON-safe DTOs for untrusted boundaries.
+Explicit hydration capabilities restore complete existing state for adapters;
+they validate but do not create, approve, activate, or otherwise earn that
+state. A matching object literal, successful schema parse, digest, or cast is
+never proof that a behavior occurred.
+
+Pure domain behavior takes every relevant fact as input and returns a new value,
+an exact `Result`, and any facts forced by the change. It performs no file,
+database, network, logging, clock, or publication I/O. Application services
+obtain those external facts, invoke the domain owner, and coordinate effects
+without restating its rules.
+
+Replaceable effectful behavior is exposed as interfaces. Programs, stores,
+brokers, compilers, adapters, services, and retained handles use these ports.
+Public factories validate configuration, establish ownership, and return the
+interface rather than exposing an implementation class.
+
+Domain classes may expose an explicit `toJSON()` projection when JSON readiness
+is part of their contract. That convenience does not make parsed JSON a domain
+object: codecs remain under transport entry points, and hydration still requires
+the exact parent revision and capabilities needed to restore behavior.
 
 Implementations use proper classes where an object owns a database, lease,
 process, queue, transport, physical view, or close sequence. Those classes are
 implementation details. V1 does not require consumers to construct an
-implementation class or extend a base class.
+implementation class or extend a base class. When a domain class is selected,
+its constructor remains closed; a class made only of DTO getters is still an
+anemic model.
 
 `TaskRun` is the central behavioral object. A first-party class owns its hot
 state projection, subscriptions, attachments, commands, and close sequence,
@@ -248,7 +293,7 @@ flowchart TB
   end
 
   subgraph Capabilities[Capability packages and adapter subpaths]
-    Resources["@archer/resources<br/>/prompts /skills /tool-build"]
+    Resources["@archer/resources<br/>/prompts /skills /budgets /profiles /control /transport /hydration"]
     Models["@archer/models<br/>/ai-sdk"]
     Sandboxes["@archer/sandbox<br/>/process /docker /qemu-hvf"]
     Files["@archer/files<br/>/fs /git /s3 /materializers"]
@@ -1037,12 +1082,13 @@ survive the current process. Its cancellation method records an authorized
 durable command. Closing the handle releases the caller's attachment and may
 settle that attachment as detached without cancelling the task.
 
-Prompt contribution is finite and returns a Promise of ordered contributions.
-It does not need a public stream. Immutable values, pure compilation, authority
-verification, command receipts, and promotion remain finite. Model steps, tool
-invocations, sandbox acquisition and execution, source ingestion,
-materialization, and file ingestion use `LiveOperation` when they have
-meaningful progress or active cancellation.
+Prompt file import is finite and asynchronous because it acquires external
+facts. Once imported, Prompt rendering and contribution composition are pure,
+synchronous `Result` operations; they do not need a public stream. Immutable
+values, pure compilation, authority verification, command receipts, and
+promotion remain finite. Model steps, tool invocations, sandbox acquisition and
+execution, source ingestion, materialization, and file ingestion use
+`LiveOperation` when they have meaningful progress or active cancellation.
 
 `@archer/core/stream` supplies the public bridge, bounded queue implementation,
 and conformance helpers. First-party runtime code adapts internal Observables
@@ -1590,11 +1636,194 @@ automatic commits are not managed shortcuts.
 
 ## Resources, prompts, and tools
 
-Models, prompts, skills, and tools are Resources. Their usable identity is an
-immutable revision. Secret bindings are separate control records and never
-resource payloads.
+Models, Prompts, Skills, Tools, and BudgetPolicies are Resources. Their usable
+identity is an immutable revision. Wave 6 ships Model, Prompt, Skill, and
+BudgetPolicy behavior; Tool Resources enter with the tool runtime in Wave 7.
+Secret bindings are separate control records and never Resource payloads. A
+reusable Resource whose factory omits a display name receives the standard
+four-part petname once at creation; UUIDv4 remains its identity.
 
-The lifecycle is:
+### Start with the developer's job
+
+The Resource layer lets an application collect reusable model configuration,
+instructions, capabilities, and limits into an `AgentProfile`, then prepare the
+exact input for one model step. Local application-owned Resources require no
+proposal, review, hydration, catalogue, or persistence ceremony.
+
+```ts
+import { memoryFileStore } from '@archer/files';
+import { bindOpenAIAiSdkModel, createAiSdkModelRouter } from '@archer/models/ai-sdk';
+import { createLocalResources } from '@archer/resources';
+
+const files = memoryFileStore();
+const resources = createLocalResources({ files });
+const binding = bindOpenAIAiSdkModel({
+  sdkModel: callerConfiguredOpenAiModel,
+  name: 'Support model',
+  maxOutputTokens: 1_200,
+});
+const router = createAiSdkModelRouter({ models: [binding] });
+
+const playbook = await resources.skills.importDirectory('./skills/order-support');
+if (!playbook.ok) throw playbook.error;
+
+const supportPrompt = await resources.prompts.importFile('./prompts/support.md', {
+  placement: 'system',
+  variables: ['company'],
+});
+if (!supportPrompt.ok) throw supportPrompt.error;
+
+const budget = resources.budgets.define({ outputTokens: 800, wallTimeMs: 20_000 });
+const profile = resources.profiles.create({
+  model: binding.target,
+  prompts: [supportPrompt.value],
+  skills: [{ skill: playbook.value, activation: 'active' }],
+  budget,
+});
+const prepared = resources.bind(profile).prepareStep({
+  promptInputs: { company: 'Northstar Outfitters' },
+  history: [],
+  userMessage: 'Where is order A-42?',
+});
+if (!prepared.ok) throw prepared.error;
+
+const started = await router.startStep(prepared.value.request);
+if (!started.ok) throw started.error;
+```
+
+`createLocalResources` borrows the caller's FileStore, identity source, clock,
+and optional application limits. It retains no background work and has no
+`close()` method. Its compiled receipt says `admission.mode: 'local'` and
+`policy: 'application'`; convenience never impersonates independent review.
+The caller still owns and closes the FileStore, ModelRouter, and returned model
+operation.
+
+The runnable
+[`customer-support-playbook`](../examples/resources/customer-support-playbook/README.md)
+uses this path for a real OpenAI request. Its exported application streams the
+answer and returns useful revision names and effective limits. It does not make
+the example reader inspect digests or lifecycle facts to understand the result.
+
+### Concern ownership
+
+Resource declarations are reusable configuration. The profile selects exact
+behavior values, a ResourceSet pins that selection under an explicit policy,
+and a ResourceSession consumes it to prepare one request. These edges must not
+collapse into a generic `Agent` bag.
+
+```mermaid
+flowchart LR
+  Model[Model\nprovider target + output ceiling]
+  Prompt[Prompt\ntemplate + placement + variables]
+  Skill[Skill\nvalidated directory + disclosure]
+  Budget[BudgetPolicy\noutput + wall-time ceilings]
+  Profile[AgentProfile\nreusable exact selection]
+  Set[ResourceSet\ncompiled selection evidence]
+  Session[ResourceSession\nfinite request preparation]
+  Request[ModelStepRequest]
+  Allocation[BudgetAllocation]
+  Thread[Future Thread budget state]
+
+  Model -->|declares provider behavior| Profile
+  Prompt -->|declares request contribution| Profile
+  Skill -->|declares model capability| Profile
+  Budget -->|declares reusable limits| Profile
+  Profile -->|selects exact revisions| Set
+  Set -->|is consumed by| Session
+  Prompt -->|renders contributions consumed by| Session
+  Skill -->|discloses selected content to| Session
+  Budget -->|allocates limits consumed by| Session
+  Session -->|produces| Request
+  Session -->|produces| Allocation
+  Thread -.->|later consumes allocation and owns live accounting| Allocation
+```
+
+- A `Model` is credential-free, provider-discriminated configuration. OpenAI,
+  Google Gemini, xAI, Ollama, and compatible installations retain distinct
+  fields. Its output ceiling is an application declaration, not provider
+  attestation. Context capacity is absent until an owner can measure it.
+- A `Prompt` owns its finite `{{identifier}}` grammar, `system` or `user`
+  placement, exact variable contract, pure rendering, source-identified
+  contribution, and legal revision. `{{{{` and `}}}}` render literal
+  delimiters. AgentProfile array order controls composition; Prompt has no
+  numeric order. File import acquires and snapshots source before constructing
+  behavior.
+- A `Skill` exists only after importing a real Agent Skills directory with a
+  root `SKILL.md`. Import derives name and description from front matter,
+  validates contained references, refuses links and observed source changes,
+  and snapshots the complete directory. Summary, full instructions, and one
+  support file are separate disclosure operations. Loading content never
+  changes a profile.
+- A `BudgetPolicy` owns only optional positive safe-integer `outputTokens` and
+  `wallTimeMs` ceilings, legal narrowing, and one-step allocation. Absence means
+  that source contributes no bound. Allocation intersects request, parent,
+  application, policy, and Model facts into one mandatory output ceiling and
+  optional absolute deadline. Model-step count, tool-call count, measured
+  context, live consumption, and persistence belong to later owners.
+- An `AgentProfile` is a reusable, portable Archer object that selects exact
+  behavior-bearing values. It owns rename, complete selection replacement, and
+  discoverable-to-active Skill changes through stale-safe pure commands. Those
+  commands carry expected revision, new revision UUIDv4, and trusted observed
+  time. They do not claim persistence or replay idempotency.
+- A `ResourceSet` is an immutable compiled Archer object binding one exact
+  profile selection. Its construction is closed. Local binding and reviewed
+  compilation are the legal paths; a DTO, spread, prototype, or cast cannot
+  splice its receipt onto unrelated behavior.
+
+Every Resource content digest covers behavior content only. Logical identity,
+revision identity, name, timestamps, and ancestry remain separate facts. A
+child preserves logical identity and original creation time, names the exact
+parent revision, receives a fresh revision UUIDv4, and uses a causal
+nondecreasing update time. Pure modifiers accept identity and time explicitly;
+they do not read a clock, generate IDs, log, persist, or publish.
+
+Ordinary behavior lives at `@archer/models`, `@archer/resources`, and the
+Resource domain subpaths. Strict JSON-safe DTO schemas and codecs live under
+`/transport`. Decoding yields detached data only. `/hydration` restores behavior
+only after exact parent, content, selected bindings, and admission capabilities
+succeed. A schema parse never earns a revision, PromptContribution, reviewed
+admission, executable model request, or ResourceSet binding.
+
+### Local and reviewed policy
+
+The local path binds behavior already trusted by the application. The reviewed
+path earns explicit facts with pure functions under `@archer/resources/control`:
+
+```ts
+const admissions = [];
+for (const resource of [model, ...prompts, ...skills, budget]) {
+  const proposal = proposeResource(resource, proposer, proposalContext());
+  const review = reviewResource(proposal, { reviewedBy: reviewer, decision: 'approve' }, reviewContext());
+  if (!review.ok) throw review.error;
+  const admission = admitResource(resource, proposal, review.value, admittingPrincipal, admissionContext());
+  if (!admission.ok) throw admission.error;
+  admissions.push(admission.value);
+}
+
+const compiled = compileReviewedResourceSet({
+  profile,
+  admissions,
+  revocations: [],
+  context: resourceSetContext,
+});
+if (!compiled.ok) throw compiled.error;
+```
+
+Each fact has its own UUIDv4, timestamp, actor, and exact Resource revision. A
+reviewer cannot be the proposer. Admission requires the exact passing review;
+revocation names one exact admission and never rewrites history. A fact decoded
+from transport is only data. `verifyResourceAdmissionChain` requires an
+application-supplied provenance check before restored facts can authorize
+reviewed compilation.
+
+Wave 6 deliberately has no Resource store, registry, hosted service,
+`ResourceControl` handle, or synchronization protocol. Pure functions accept
+identity and time facts explicitly and return immutable facts or exact errors.
+A later durable owner may persist them, enforce command idempotency, publish
+lifecycle streams, or add an application service without changing these domain
+decisions.
+
+The complete conceptual lifecycle is:
 
 ```text
 draft -> immutable revision -> proposal -> independent review -> admission
@@ -1605,61 +1834,44 @@ Revocation is a new durable fact. It does not rewrite history. It blocks future
 activation or invocation according to policy. The request already acknowledged
 for a Turn and every tool call it caused remain pinned to their ResourceSet.
 
-Resource and profile control exposes replayable lifecycle facts without making
-an immutable ResourceSet mutate underneath a Turn:
+Reviewed compilation validates the exact profile selection, behavior binding,
+content digest, one unambiguous current admission per selected revision,
+revocation state, cardinality, and deterministic Model-Prompt-Skill-Budget
+order. It does not claim Workspace binding, Tool dependency closure, secret
+ambiguity checks, or sandbox compatibility; those owners do not exist in Wave 6. A restored ResourceSet must pass the same checks and either authenticate its
+local application provenance or rebuild reviewed evidence.
 
-```ts
-export interface ResourceControl extends OwnedHandle<ResourceControlCloseEvidence> {
-  readonly lifecycleEvents: ReplayableEventStream<ResourceLifecycleEvent, ResourceLifecycleCursor>;
-  getProfile(profileId: ProfileId, grant: GrantRef<ResourceReadAction>): Promise<ProfileRevision>;
-  updateProfile(command: ProfileUpdate, grant: GrantRef<ProfileWriteAction>): Promise<ProfileUpdateOutcome>;
-  admit(command: ResourceAdmissionCommand, grant: GrantRef<ResourceAdmitAction>): Promise<ResourceAdmissionOutcome>;
-  revoke(command: ResourceRevocationCommand, grant: GrantRef<ResourceRevokeAction>): Promise<ResourceRevocationOutcome>;
-  compile(input: CompileResourceSetInput, grant: GrantRef<ResourceReadAction>): Promise<CompiledResourceSetReceipt>;
-}
-```
+Progressive disclosure changes model-visible content, not Skill identity. A
+profile can contain active and discoverable Skills. Preparation includes full
+instructions for active Skills and summaries for discoverable Skills. Reading
+a support file changes nothing. Activating a selected discoverable Skill is a
+pure AgentProfile revision; only binding that new profile can produce a new
+ResourceSet for a later request or Turn.
 
-Each mutating command carries an expected control revision and returns a
-durable receipt or exact refusal. The compilation receipt binds the immutable
-ResourceSet, profile revision, admission and revocation frontier, compiler
-revision, and evidence digest. `ThreadHandle.startTurn()` acknowledges that
-receipt before a model effect exists. Lifecycle subscribers can react to
-admission, activation, and revocation without polling mutable names, but their
-observations never replace the current checks used for activation or
-invocation.
+`@archer/resources/prompts` imports and snapshots a source file before creating
+behavior. Thereafter rendering and composition are pure. Contributions carry
+exact Prompt revision identity, and only Prompt behavior can mint them. The
+composer preserves AgentProfile Prompt order, keeps instructions separate from
+conversation history, and places user contributions immediately before the
+current user message. There is no public Observable for prompt compilation.
 
-The compiler validates Workspace binding, active admission, dependency closure,
-model membership, exact tree identity, unique model-facing names, skill
-dependencies, secret ambiguity, sandbox compatibility, and deterministic
-catalogue order. Restored ResourceSets pass the same codec and validation as
-newly compiled sets.
-
-Progressive disclosure changes prompt size, not identity. A profile can contain
-many admitted skills and tools while a request initially includes short skill
-descriptions and a small active catalogue. Loading a skill or tool compiles a
-new ResourceSet for the next Turn boundary. No catalogue changes in the middle
-of one model and tool causal chain.
-
-`@archer/resources/prompts` supplies finite, ordered prompt contributions and a default
-compiler. Contributions return Promises, carry source and revision identity,
-and are recorded with the request they influenced. There is no public
-Observable for prompt compilation.
-
-`@archer/agent/tools` owns raw-call binding, approval requests, invocation identity,
-secret leasing, sandbox execution, and terminal tool outcomes. A friendly tool
-name is never authority or replay identity. A pinned invocation carries the
-resource revision, artifact tree, ResourceSet, request digest, effect, attempt,
-Workspace, sandbox, and applicable grant references.
+Wave 7's `@archer/agent/tools` owns raw-call binding, approval requests,
+invocation identity, secret leasing, sandbox execution, and terminal tool
+outcomes. Wave 6 retains provider-neutral tool descriptions in
+`ModelStepRequest` for direct model consumers, but Resource preparation supplies
+an empty tool list. It does not call asserted metadata a verified executable.
+A future friendly tool name is never authority or replay identity.
 
 Agent-authored TypeScript follows the same build, revision, review, admission,
 activation, and sandbox invocation path as human-authored code. It does not
 become a trusted host extension. V1 tool builds run no package-manager lifecycle
 scripts, install no ambient packages, and admit no native executable dependency.
 
-Resource and tool builds that expose meaningful progress are finite
-`LiveOperation`s. `@archer/agent/tools` uses the same contract for every
-admitted invocation, whether the implementation runs in a sandbox, on a remote
-service, or in a trusted first-party host:
+Resource acquisition in Wave 6 is finite file import. Future tool builds that
+expose meaningful progress are finite `LiveOperation`s. `@archer/agent/tools`
+uses the same contract for every admitted invocation, whether the
+implementation runs in a sandbox, on a remote service, or in a trusted
+first-party host:
 
 ```ts
 export interface ToolExecutor {
@@ -1677,11 +1889,12 @@ this with a Promise-only tool path or callback registry.
 
 ## Models
 
-`@archer/models` owns provider-neutral request, ordered response, usage, delta,
-terminal result, and failure values. Its discriminated target types retain
-provider-specific controls. An OpenAI target accepts OpenAI controls, an
-Anthropic target accepts Anthropic controls, and an allowlisted compatible
-installation retains its installation identity and endpoint.
+`@archer/models` owns credential-free provider targets, legal revision,
+provider-neutral request, ordered response, usage, delta, terminal result, and
+failure values. Its discriminated target types retain provider-specific
+controls for OpenAI, Google Gemini, xAI, Ollama, and named compatible
+installations. A target declares a generated-output ceiling; it does not claim
+provider attestation or measured context capacity.
 
 A model adapter performs one provider step. It neither loops over tools nor
 chooses the next request. The first-party AI SDK adapter disables SDK retries,
@@ -1690,17 +1903,26 @@ raw provider loggers from the request. Retry classification is advice. A new
 attempt is admitted and recorded by the Cell-owned runtime.
 
 ```ts
-export interface ModelRouter extends OwnedHandle<ModelRouterCloseEvidence> {
-  startStep(request: ModelStepRequest): Promise<LiveOperation<ModelStepEvent, ModelStepResult, ModelStepCloseEvidence>>;
+export interface ModelRouter extends AsyncDisposable {
+  readonly closed: Promise<ModelRouterCloseEvidence>;
+
+  startStep(
+    request: ModelStepRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<Result<LiveOperation<ModelStepEvent, ModelStepResult, ModelStepCloseEvidence>, ModelsError>>;
+
+  close(): Promise<ModelRouterCloseEvidence>;
 }
 ```
 
-The outer Promise covers request validation, exact target resolution, and
-construction of one already-running attempt. Provider, cancellation, limit,
-and retry-advice outcomes are tagged `ModelStepResult` values. The router does
-not expose a live current target and cannot silently change the target pinned
-in the acknowledged request. Provider health and circuit state enter routing
-as explicit facts or diagnostics.
+`createModelStepRequest` accepts an admitted Model behavior value, defensively
+copies every input, and mints process-local request authority. A transport DTO
+cannot be executed by parsing or casting it. The outer `startStep` Promise
+covers exact target resolution and construction of one already-running
+attempt. Provider, cancellation, and retry-advice outcomes are tagged
+`ModelStepResult` values. The router does not expose a live current target and
+cannot silently change the target pinned in the request. The AI SDK adapter
+borrows caller-configured SDK models and disables hidden retries.
 
 Transient text, reasoning, and tool-input deltas are attempt-addressed and
 byte-offset. The terminal response contains the complete normalized output and
@@ -2699,8 +2921,8 @@ per interface or first-party adapter:
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/conformance`, `/cells/embedded-sqlite`, `/cells/s3`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics`                                                                      | RxJS and standard Node modules used by selected runtime modules; React and AWS SDK v3 are optional peers for their adapter subpaths |
 | `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/workspace`, `/workspace/conformance`, `/scratchpad`, `/scratchpad/conformance`, `/materializer`, `/materializer/directory`, `/materializer/conformance`; later `/s3`, `/git`, `/materializer/docker`, `/materializer/qemu` | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                                               |
-| `@archer/models`        | Provider-neutral targets, requests, ordered parts, deltas, one-step operations, usage, and routing                                                                            | `/ai-sdk`                                                                                                                                                                                                                           | `core`; AI SDK bundled for the supported first-party adapter                                                                        |
-| `@archer/resources`     | Resource drafts and revisions, admission, profiles, ResourceSets, prompts, skills, build evidence, activation, and revocation                                                 | `/prompts`, `/skills`, `/tool-build`                                                                                                                                                                                                | `core`, `files`, `models`                                                                                                           |
+| `@archer/models`        | Behavior-bearing provider targets, legal revision, admitted requests, ordered parts, deltas, one-step operations, usage, and routing                                          | `/ai-sdk`, `/transport`, `/hydration`                                                                                                                                                                                               | `core`; AI SDK bundled for the supported first-party adapter                                                                        |
+| `@archer/resources`     | The local Resource workflow, AgentProfiles, ResourceSets, request preparation, and shared admitted types                                                                      | `/prompts`, `/skills`, `/budgets`, `/profiles`, `/control`, `/transport`, `/hydration`                                                                                                                                              | `core`, `files`, `models`; `unique-names-generator` for omitted display names                                                       |
 | `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                                                                                                  | `core`, `files`; backend-specific optional peers                                                                                    |
 | `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                                                   |
 | `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                                                                                                            | Selected capability and observability packages                                                                                      |
@@ -2744,7 +2966,7 @@ independently against the protocol and conformance version they implement.
 | Internal reactive work         | RxJS 7.8 hot graphs in runtime implementation modules; no RxJS declaration exports                               |
 | Public temporal API            | `LiveState`, `AtomicLiveAttachment`, replayable and transient streams, and `LiveOperation`; no RxJS declarations |
 | React binding                  | `useSyncExternalStore` over generic `LiveState`; React remains an optional peer                                  |
-| Provider integration           | AI SDK at the adapter edge, SDK retries disabled                                                                 |
+| Provider integration           | AI SDK at the adapter edge for OpenAI, Google Gemini, xAI, Ollama, and compatible targets; SDK retries disabled  |
 | Tool schemas                   | JSON Schema 2020-12, including boolean schemas, with Ajv 8 behind validation ports                               |
 | Embedded durability            | `node:sqlite`, with no ORM in the journal or outbox path                                                         |
 | Distributed reference host     | Direct immutable object revisions behind a small conditional S3 head, with a mandatory live semantics probe      |
@@ -2827,8 +3049,10 @@ suites cover:
   subscriber;
 - model ordering, correlation, offsets, cancellation, provider normalization,
   and zero hidden retries;
-- resource Workspace binding, build identity, independent review, deterministic
-  compilation, activation timing, pinning, and revocation;
+- Prompt rendering and exact variable refusal, real Agent Skill import and
+  progressive disclosure, budget narrowing and allocation, AgentProfile
+  transitions, Resource binding, independent review, deterministic
+  compilation, transport/hydration separation, pinning, and revocation;
 - file normalization, traversal, collision rejection, mode preservation,
   permanent byte vectors, permutation convergence, strict decode rejection,
   recursive structural sharing, missing child references, verified streaming
@@ -2913,10 +3137,11 @@ V1 supports:
   grants, budgets, ResourceSets, and private Workspaces;
 - an Archer-owned ordered transcript, typed repair, durable compaction, and
   cursor-addressed observation;
-- OpenAI, Anthropic, and named allowlisted OpenAI-compatible targets through
-  the AI SDK adapter;
-- exact model, prompt, skill, and TypeScript or JavaScript tool revisions,
-  progressive disclosure, and between-Turn activation;
+- OpenAI, Google Gemini, xAI, Ollama, and named compatible targets through the
+  AI SDK adapter;
+- exact Model, Prompt, Skill, and BudgetPolicy revisions, progressive Skill
+  disclosure, prepared ResourceSets, and between-request activation; verified
+  TypeScript or JavaScript Tool Resources arrive with the Tool owner;
 - embedded SQLite Cells and direct S3 CAS Cells with bounded authorized recovery
   discovery;
 - immutable regular-file trees, filesystem stores, hot private Workspace and
@@ -2988,10 +3213,14 @@ managed demo:
    Ship worker-isolated embedded SQLite and direct immutable-revision S3 CAS
    hosts, the mandatory live storage probe, bounded authorized recovery
    discovery, and the runnable durable-webhook service.
-6. **Models, prompts, and resources.** Replace SDK-shaped durable values,
-   implement one-step AI SDK live operations, finite prompt compilation,
-   resource build and admission, replayable resource lifecycle, profiles,
-   progressive disclosure, and between-Turn activation.
+6. **Models, prompts, and resources.** Publish behavior-bearing credential-free
+   Model revisions and one-step AI SDK live operations; imported and pure
+   Prompt behavior; validated Agent Skill directories with progressive
+   disclosure; enforceable BudgetPolicy allocation; reusable AgentProfiles;
+   closed local or reviewed ResourceSets; strict transport and hydration
+   boundaries; and a short application-owned request-preparation path. Durable
+   storage, hosted control, lifecycle streams, and Tool Resources remain with
+   their later owners.
 7. **Sandboxes and tools.** Rebuild live candidate acquisition, independent
    exact verification, hot sandbox state, invocation-scoped secrets,
    Materializer pairing, live execution and tool operations, and close
