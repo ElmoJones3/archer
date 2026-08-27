@@ -2,13 +2,22 @@
 
 import { Result, type Result as ResultValue } from '@archer/core';
 import { restoreTree, type FileStore, type LogicalPath } from '@archer/files';
-import type { Model } from '@archer/models';
+import { modelRef, type Model } from '@archer/models';
 
-import { budgetPolicyRef, hydrateBudgetPolicyState, type BudgetPolicy } from '../budgets/index.js';
+import {
+  budgetAllocationState,
+  budgetPolicyRef,
+  hydrateBudgetAllocationState,
+  hydrateBudgetPolicyState,
+  type BudgetAllocation,
+  type BudgetAllocationState,
+  type BudgetPolicy,
+  type BudgetPolicyState,
+} from '../budgets/index.js';
 import {
   compileReviewedResourceSet,
-  type ResourceRevocationDto,
   type VerifiedResourceAdmission,
+  type VerifiedResourceRevocation,
 } from '../control/index.js';
 import { ResourcesError } from '../errors.js';
 import {
@@ -19,8 +28,17 @@ import {
 } from '../profiles/index.js';
 import { hydratePromptState, promptRef, type Prompt } from '../prompts/index.js';
 import { hydrateSkillState, skillRef, type Skill } from '../skills/index.js';
-import { AgentProfileCodec, BudgetPolicyCodec, PromptCodec, ResourceSetCodec, SkillCodec } from '../transport/index.js';
-import { compileResourceSetFromProfile, type ResourceSet, type ResourceSetDto } from '../session.js';
+import {
+  AgentProfileCodec,
+  BudgetAllocationCodec,
+  BudgetPolicyCodec,
+  PromptCodec,
+  ResourceSetCodec,
+  SkillCodec,
+  type ResourceSetDto,
+  type BudgetAllocationDto,
+} from '../transport/index.js';
+import { compileResourceSetFromProfile, type ResourceSet } from '../session.js';
 
 /** Minimal immutable revision fields required to verify one hydration parent. */
 type HydratedRevision = Readonly<{
@@ -55,6 +73,24 @@ export type HydrateBudgetPolicyInput = Readonly<{
   dto: unknown;
   /** Required exact parent when the DTO describes a child revision. */
   parent?: BudgetPolicy;
+}>;
+
+/** Exact owners and provenance required to restore BudgetAllocation parent authority. */
+export type HydrateBudgetAllocationInput = Readonly<{
+  /** Untrusted persisted or transported BudgetAllocation DTO. */
+  dto: unknown;
+
+  /** Exact behavior-bearing policy whose revision participated in allocation. */
+  policy: BudgetPolicy;
+
+  /** Exact behavior-bearing Model whose capacity participated in allocation. */
+  model: Model;
+
+  /** Exact admitted parent required when the receipt names delegated authority. */
+  parent?: BudgetAllocation;
+
+  /** Authenticates application-owned request and hard-limit provenance absent from the receipt. */
+  authenticate(receipt: BudgetAllocationDto): boolean | Promise<boolean>;
 }>;
 
 /** Capabilities required to reconnect a Skill DTO with exact immutable content. */
@@ -108,7 +144,7 @@ export type HydrateReviewedResourceSetAdmission = Readonly<{
   admissions: readonly VerifiedResourceAdmission[];
 
   /** Current revocations visible at the restoring boundary. */
-  revocations?: readonly ResourceRevocationDto[];
+  revocations?: readonly VerifiedResourceRevocation[];
 }>;
 
 /** Exact behavior and admission capabilities required to restore one ResourceSet. */
@@ -201,9 +237,107 @@ export function hydrateBudgetPolicy(input: HydrateBudgetPolicyInput): ResultValu
     if (input.parent !== undefined) budgetPolicyRef(input.parent);
     /** Child hydration must prove continuity with behavior the application already trusts. */
     assertHydrationParent(parsed.value, input.parent);
-    return Result.ok(hydrateBudgetPolicyState(parsed.value));
+    /** Decimal decoding belongs to this adapter-facing boundary, not BudgetPolicy behavior. */
+    const state: BudgetPolicyState = Object.freeze({
+      ...parsed.value,
+      limits: Object.freeze({
+        ...(parsed.value.limits.outputTokens === undefined
+          ? {}
+          : { outputTokens: Number(parsed.value.limits.outputTokens) }),
+        ...(parsed.value.limits.wallTimeMs === undefined ? {} : { wallTimeMs: Number(parsed.value.limits.wallTimeMs) }),
+      }),
+    });
+    return Result.ok(hydrateBudgetPolicyState(state));
   } catch (cause) {
     return Result.error(new ResourcesError('resources_hydration_failed', 'BudgetPolicy hydration failed', { cause }));
+  }
+}
+
+/**
+ * Restores BudgetAllocation parent authority after exact owner, ancestry, bound, and application checks.
+ * @param input - Untrusted DTO plus every behavior and provenance owner required to re-admit it.
+ * @returns Admitted allocation authority or a stable hydration refusal.
+ */
+export async function hydrateBudgetAllocation(
+  input: HydrateBudgetAllocationInput,
+): Promise<ResultValue<BudgetAllocation, ResourcesError>> {
+  try {
+    /** Parsing proves only strict portable shape; it deliberately grants no allocation authority. */
+    const parsed = BudgetAllocationCodec.safeParse(input.dto);
+    if (!parsed.ok) throw parsed.error;
+    /** Exact refs reconnect the receipt to current behavior rather than merely similar configuration. */
+    const policy = budgetPolicyRef(input.policy);
+    /** Model projection independently proves the selected provider target still carries behavior provenance. */
+    const model = modelRef(input.model);
+    if (
+      policy.id !== parsed.value.policy.id ||
+      policy.revisionId !== parsed.value.policy.revisionId ||
+      policy.name !== parsed.value.policy.name ||
+      policy.contentDigest !== parsed.value.policy.contentDigest ||
+      model.id !== parsed.value.model.id ||
+      model.revisionId !== parsed.value.model.revisionId ||
+      model.type !== parsed.value.model.type ||
+      model.name !== parsed.value.model.name ||
+      model.contentDigest !== parsed.value.model.contentDigest
+    ) {
+      throw new TypeError('BudgetAllocation receipt does not match its exact policy and Model owners');
+    }
+    /** A named parent must be supplied, admitted, and exactly identical; omission must also agree. */
+    if ((parsed.value.parentId === undefined) !== (input.parent === undefined)) {
+      throw new TypeError('BudgetAllocation parent presence does not match its receipt');
+    }
+    if (input.parent !== undefined) {
+      /** Projection proves the supplied parent still carries admitted allocation authority. */
+      const parent = budgetAllocationState(input.parent);
+      if (parent.id !== parsed.value.parentId) {
+        throw new TypeError('BudgetAllocation receipt does not match its exact admitted parent');
+      }
+      if (parsed.value.startedAt < parent.startedAt) {
+        throw new TypeError('Child BudgetAllocation cannot start before its parent');
+      }
+      if (Number(parsed.value.outputTokens) > parent.outputTokens) {
+        throw new TypeError('BudgetAllocation output exceeds parent authority');
+      }
+      if (
+        parent.deadline !== undefined &&
+        (parsed.value.deadline === undefined || parsed.value.deadline > parent.deadline)
+      ) {
+        throw new TypeError('BudgetAllocation deadline exceeds parent authority');
+      }
+    }
+    /** Rechecks mechanically available current bounds before application provenance is consulted. */
+    const outputTokens = Number(parsed.value.outputTokens);
+    if (
+      outputTokens > input.model.maxOutputTokens ||
+      (input.policy.ceilings.outputTokens !== undefined && outputTokens > input.policy.ceilings.outputTokens)
+    ) {
+      throw new TypeError('BudgetAllocation output exceeds supplied owner authority');
+    }
+    if (input.policy.ceilings.wallTimeMs !== undefined) {
+      /** Re-derives the policy's latest legal deadline without trusting the transported timestamp. */
+      const latestDeadline = Date.parse(parsed.value.startedAt) + input.policy.ceilings.wallTimeMs;
+      if (
+        !Number.isSafeInteger(latestDeadline) ||
+        latestDeadline > 8_640_000_000_000_000 ||
+        parsed.value.deadline === undefined ||
+        Date.parse(parsed.value.deadline) > latestDeadline
+      ) {
+        throw new TypeError('BudgetAllocation deadline exceeds supplied policy authority');
+      }
+    }
+    /** Remaining request and application-limit provenance belongs to the surrounding application boundary. */
+    const authentic = await input.authenticate(parsed.value);
+    if (!authentic) throw new TypeError('BudgetAllocation receipt was not authenticated');
+    /** Decimal decoding occurs only after every transport and authority check succeeds. */
+    const state: BudgetAllocationState = Object.freeze({
+      ...parsed.value,
+      outputTokens,
+    });
+    return Result.ok(hydrateBudgetAllocationState(state));
+  } catch (cause) {
+    return Result.error(
+      new ResourcesError('resources_hydration_failed', 'BudgetAllocation hydration failed', { cause }),
+    );
   }
 }
 

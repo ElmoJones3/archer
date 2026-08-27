@@ -29,7 +29,6 @@ export {
   type ResourceRevisionRef,
   type ResourceSetAdmission,
   type ResourceSetCreationContext,
-  type ResourceSetDto,
   type ResourceSetId,
   type ResourceSession,
   type ResourceSourceImporter,

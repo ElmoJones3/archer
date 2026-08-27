@@ -2,25 +2,29 @@
 
 export {
   Prompt,
-  composePromptContributions,
   definePrompt,
-  importPromptFile,
   promptRef,
   renderPrompt,
   revisePrompt,
-  type ComposedPrompt,
-  type ComposePromptContributionsInput,
   type DefinePromptInput,
-  type ImportPromptFileInput,
   type PromptContribution,
   type PromptCreationContext,
   type PromptId,
-  type PromptImportDependencies,
   type PromptPlacement,
   type PromptRef,
   type PromptRevisionContext,
   type PromptRevisionId,
-  type PromptSourceFile,
-  type PromptSourceImporter,
   type RevisePromptInput,
 } from '../prompts/index.js';
+export {
+  composePromptContributions,
+  type ComposedPrompt,
+  type ComposePromptContributionsInput,
+} from '../prompts/composition.js';
+export {
+  importPromptFile,
+  type ImportPromptFileInput,
+  type PromptImportDependencies,
+  type PromptSourceFile,
+  type PromptSourceImporter,
+} from '../prompts/import.js';

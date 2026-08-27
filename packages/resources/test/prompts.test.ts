@@ -6,12 +6,26 @@ import { ResourcesError } from '../src/index.js';
 import {
   composePromptContributions,
   definePrompt,
+  renderPrompt,
   revisePrompt,
   type PromptContribution,
 } from '../src/entrypoints/prompts.js';
 import { promptContext, promptRevisionContext, timestamp } from './support.js';
 
 describe('Prompt behavior', () => {
+  it('keeps the standalone rendering depth identical to Prompt behavior', () => {
+    /** Creates one strict Prompt so both success and refusal can exercise the shared implementation. */
+    const prompt = definePrompt(
+      { placement: 'user', template: 'Ticket {{ticket}} belongs to {{customer}}.' },
+      promptContext(2),
+    );
+    /** Supplies exact variables for the successful class and standalone rendering paths. */
+    const values = { ticket: 'T-42', customer: 'Rae' };
+
+    expect(renderPrompt(prompt, values)).toEqual(prompt.render(values));
+    expect(renderPrompt(prompt, { ticket: 'T-42' })).toEqual(prompt.render({ ticket: 'T-42' }));
+  });
+
   it('renders repeated variables verbatim and preserves declared missing order', () => {
     /** Declares repeated and ordered variables so rendering behavior is proved beyond shape. */
     const prompt = definePrompt(

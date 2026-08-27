@@ -9,7 +9,6 @@ import {
   Sha256DigestSchema,
   TimestampSchema,
   UuidV4Schema,
-  createUuidV4,
   type ArcherObject,
   type JsonValue,
   type Sha256Digest,
@@ -228,18 +227,12 @@ export function createRevisionIdentity<ObjectName extends string, Id extends Uui
 }
 
 /**
- * Derives ordinary initial facts while letting deterministic callers supply their own context.
- * @param context - Optional exact identity and time facts.
- * @returns A complete initial context using UUIDv4 and one clock read when omitted.
+ * Carries explicit application-owned initial facts into one Resource constructor.
+ * @param context - Exact identity and time facts supplied by a composition boundary.
+ * @returns The unchanged context for shared Resource identity admission.
  */
 export function initialResourceContext<Id extends UuidV4, RevisionId extends UuidV4>(
-  context?: ResourceCreationContext<Id, RevisionId>,
+  context: ResourceCreationContext<Id, RevisionId>,
 ): ResourceCreationContext<Id, RevisionId> {
-  if (context !== undefined) return context;
-  /** Default application construction creates two independent identities and reads time once. */
-  return Object.freeze({
-    id: createUuidV4() as Id,
-    revisionId: createUuidV4() as RevisionId,
-    observedAt: TimestampSchema.parse(new Date().toISOString()),
-  });
+  return context;
 }

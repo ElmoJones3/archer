@@ -11,7 +11,6 @@ import {
   Result,
   TimestampSchema,
   UuidV4Schema,
-  createUuidV4,
   type ArcherObject,
   type Result as ResultValue,
   type Sha256Digest,
@@ -143,8 +142,8 @@ export type ActivateSkillCommand = AgentProfileCommand &
     skillId: SkillId;
   }>;
 
-/** JSON-safe AgentProfile state emitted at transport boundaries. */
-export type AgentProfileDto = ArcherObject<'agent-profile', AgentProfileId> &
+/** Complete intrinsic AgentProfile state used by projection and hydration boundaries. */
+export type AgentProfileState = ArcherObject<'agent-profile', AgentProfileId> &
   Readonly<{
     /** Exact immutable profile revision. */
     revisionId: AgentProfileRevisionId;
@@ -281,30 +280,22 @@ function portableSelections(bindings: AgentProfileBindings): Readonly<{
 }
 
 /**
- * Derives ordinary initial facts while preserving deterministic application injection.
- * @param context - Optional exact profile identity and time.
+ * Admits explicit initial facts supplied by an application composition boundary.
+ * @param context - Exact profile identity and time.
  * @returns Complete validated profile creation facts.
  */
-function initialProfileContext(context?: AgentProfileCreationContext): AgentProfileCreationContext {
-  if (context !== undefined) {
-    /** Logical and revision UUIDs identify different facts even when supplied by deterministic callers. */
-    const id = UuidV4Schema.parse(context.id) as AgentProfileId;
-    /** Initial revision identity must not alias the stable profile identity. */
-    const revisionId = UuidV4Schema.parse(context.revisionId) as AgentProfileRevisionId;
-    if (String(id) === String(revisionId)) {
-      throw new TypeError('AgentProfile logical and revision identities must differ');
-    }
-    return Object.freeze({
-      id,
-      revisionId,
-      observedAt: TimestampSchema.parse(context.observedAt),
-    });
+function initialProfileContext(context: AgentProfileCreationContext): AgentProfileCreationContext {
+  /** Logical and revision UUIDs identify different facts even when supplied by deterministic callers. */
+  const id = UuidV4Schema.parse(context.id) as AgentProfileId;
+  /** Initial revision identity must not alias the stable profile identity. */
+  const revisionId = UuidV4Schema.parse(context.revisionId) as AgentProfileRevisionId;
+  if (String(id) === String(revisionId)) {
+    throw new TypeError('AgentProfile logical and revision identities must differ');
   }
-  /** Default construction creates independent logical/revision identities and reads time once. */
   return Object.freeze({
-    id: createUuidV4() as AgentProfileId,
-    revisionId: createUuidV4() as AgentProfileRevisionId,
-    observedAt: TimestampSchema.parse(new Date().toISOString()),
+    id,
+    revisionId,
+    observedAt: TimestampSchema.parse(context.observedAt),
   });
 }
 
@@ -433,7 +424,7 @@ export class AgentProfile {
    * @param state - Complete immutable identity and portable selection state.
    * @param bindings - Exact process-local behavior owners.
    */
-  protected constructor(token: typeof PROFILE_CONSTRUCTION, state: AgentProfileDto, bindings: AgentProfileBindings) {
+  protected constructor(token: typeof PROFILE_CONSTRUCTION, state: AgentProfileState, bindings: AgentProfileBindings) {
     if (token !== PROFILE_CONSTRUCTION) throw new TypeError('Use an AgentProfile factory');
     /** Revalidates every selected behavior owner before trusting portable profile state. */
     const admittedBindings = admitBindings(bindings);
@@ -498,31 +489,33 @@ export class AgentProfile {
   activateSkill(command: ActivateSkillCommand): ResultValue<AgentProfile, ResourcesError> {
     return activateSkill(this, command);
   }
+}
 
-  /**
-   * Emits exact JSON-safe profile state without process-local behavior bindings.
-   * @returns Frozen portable AgentProfile DTO.
-   */
-  toJSON(): AgentProfileDto {
-    if (!ADMITTED_AGENT_PROFILES.has(this)) {
-      throw new ResourcesError('resources_invalid_profile', 'Profile serialization requires admitted behavior');
-    }
-    return Object.freeze({
-      id: this.id,
-      object: this.object,
-      createdAt: this.createdAt,
-      name: this.name,
-      revisionId: this.revisionId,
-      revision: this.revision,
-      ...(this.previousRevisionId === undefined ? {} : { previousRevisionId: this.previousRevisionId }),
-      updatedAt: this.updatedAt,
-      model: this.model,
-      prompts: this.prompts,
-      skills: this.skills,
-      budget: this.budget,
-      contentDigest: this.contentDigest,
-    });
+/**
+ * Projects intrinsic AgentProfile state without exposing private behavior bindings.
+ * @param profile - Exact admitted selection behavior.
+ * @returns Frozen state suitable for a separate transport mapping.
+ * @internal
+ */
+export function agentProfileState(profile: AgentProfile): AgentProfileState {
+  if (!ADMITTED_AGENT_PROFILES.has(profile)) {
+    throw new ResourcesError('resources_invalid_profile', 'Profile state projection requires admitted behavior');
   }
+  return Object.freeze({
+    id: profile.id,
+    object: profile.object,
+    createdAt: profile.createdAt,
+    name: profile.name,
+    revisionId: profile.revisionId,
+    revision: profile.revision,
+    ...(profile.previousRevisionId === undefined ? {} : { previousRevisionId: profile.previousRevisionId }),
+    updatedAt: profile.updatedAt,
+    model: profile.model,
+    prompts: profile.prompts,
+    skills: profile.skills,
+    budget: profile.budget,
+    contentDigest: profile.contentDigest,
+  });
 }
 
 /** Package-local concrete profile keeps the public class non-constructible in TypeScript. */
@@ -533,7 +526,7 @@ class InstalledAgentProfile extends AgentProfile {
    * @param state - Complete portable profile state.
    * @param bindings - Exact process-local behavior owners.
    */
-  constructor(token: typeof PROFILE_CONSTRUCTION, state: AgentProfileDto, bindings: AgentProfileBindings) {
+  constructor(token: typeof PROFILE_CONSTRUCTION, state: AgentProfileState, bindings: AgentProfileBindings) {
     super(token, state, bindings);
   }
 }
@@ -541,13 +534,10 @@ class InstalledAgentProfile extends AgentProfile {
 /**
  * Creates one legal initial AgentProfile from behavior-bearing Resource objects.
  * @param input - Exact selections and optional display label.
- * @param context - Optional deterministic logical/revision identity and time.
+ * @param context - Explicit deterministic logical/revision identity and time.
  * @returns Immutable reusable profile beginning at revision zero.
  */
-export function createAgentProfile(
-  input: CreateAgentProfileInput,
-  context?: AgentProfileCreationContext,
-): AgentProfile {
+export function createAgentProfile(input: CreateAgentProfileInput, context: AgentProfileCreationContext): AgentProfile {
   try {
     /** Captures the exact behavior owners the initial profile will retain privately. */
     const bindings = admitBindings(input);
@@ -558,7 +548,7 @@ export function createAgentProfile(
     /** Generates an omitted display name from stable identity without changing selection content. */
     const name = ProfileNameSchema.parse(input.name ?? resourcePetname(facts.id));
     /** Builds portable initial state only after every behavior selection is admitted. */
-    const state: AgentProfileDto = Object.freeze({
+    const state: AgentProfileState = Object.freeze({
       id: facts.id,
       object: 'agent-profile',
       createdAt: facts.observedAt,
@@ -598,7 +588,7 @@ function createProfileChild(
   /** Projects child selections from exact behavior owners to prevent state/binding divergence. */
   const selections = portableSelections(bindings);
   /** Preserves logical identity and ancestry while replacing only the child revision facts. */
-  const state: AgentProfileDto = Object.freeze({
+  const state: AgentProfileState = Object.freeze({
     id: parent.id,
     object: 'agent-profile',
     createdAt: parent.createdAt,
@@ -723,11 +713,11 @@ export function activateSkill(
 
 /**
  * Reconstructs admitted AgentProfile state from exact hydrated Resources and parent verification.
- * @param dto - Transport-validated exact profile state.
+ * @param state - Domain-validated exact profile state.
  * @param bindings - Hydrated behavior objects matching every exact reference.
  * @returns Behavior-bearing profile with persisted identity and revision.
  * @internal
  */
-export function hydrateAgentProfileState(dto: AgentProfileDto, bindings: AgentProfileBindings): AgentProfile {
-  return new InstalledAgentProfile(PROFILE_CONSTRUCTION, dto, bindings);
+export function hydrateAgentProfileState(state: AgentProfileState, bindings: AgentProfileBindings): AgentProfile {
+  return new InstalledAgentProfile(PROFILE_CONSTRUCTION, state, bindings);
 }

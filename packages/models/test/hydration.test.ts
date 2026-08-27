@@ -13,7 +13,7 @@ import {
   type ModelRevisionContext,
   type ModelRevisionId,
 } from '../src/index.js';
-import { ModelCodec } from '../src/transport/index.js';
+import { ModelCodec, encodeModel } from '../src/transport/index.js';
 
 /** Supplies deterministic production-valid root identity. */
 const ROOT_CONTEXT: ModelCreationContext = Object.freeze({
@@ -40,9 +40,9 @@ describe('Model transport and hydration', () => {
     );
     if (!revised.ok) throw revised.error;
     /** Decodes root data separately to prove parsing alone does not preserve behavior provenance. */
-    const parentDto = ModelCodec.parse(parent);
+    const parentDto = encodeModel(parent);
     /** Decodes child data separately so hydration must reconnect explicit ancestry. */
-    const childDto = ModelCodec.parse(revised.value);
+    const childDto = encodeModel(revised.value);
 
     /** Restores the root through the only boundary allowed to reattach behavior. */
     const hydratedParent = hydrateModel({ dto: parentDto });

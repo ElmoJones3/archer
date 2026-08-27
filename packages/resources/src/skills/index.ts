@@ -1,24 +1,12 @@
-/** @file Imports real Agent Skills directories into behavior-bearing immutable Resources. */
+/** @file Owns Agent Skills conventions, progressive disclosure, and immutable revision behavior. */
 
-import { constants } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
-import { basename, isAbsolute, join, posix, relative, sep } from 'node:path';
+import { posix } from 'node:path';
 
 import * as z from 'zod';
 import { parseDocument } from 'yaml';
 
 import { Result, type Result as ResultValue, type Sha256Digest, type UuidV4 } from '@archer/core';
-import {
-  FileMode,
-  LogicalPathSchema,
-  memoryFileStore,
-  publishTree,
-  restoreTree,
-  type FileStore,
-  type ImmutableTree,
-  type LogicalPath,
-  type TreeRef,
-} from '@archer/files';
+import { LogicalPathSchema, type ImmutableTree, type LogicalPath, type TreeRef } from '@archer/files';
 
 import {
   createInitialRevisionIdentity,
@@ -113,8 +101,8 @@ export type SkillRef = Readonly<{
   contentDigest: Sha256Digest;
 }>;
 
-/** JSON-safe Skill state emitted at transport boundaries. */
-export type SkillDto = ResourceRevision<'skill', SkillId, SkillRevisionId> &
+/** Complete intrinsic Skill state used by projection and hydration boundaries. */
+export type SkillState = ResourceRevision<'skill', SkillId, SkillRevisionId> &
   Readonly<{
     /** Narrows the Wave 6 Resource family. */
     resource: 'skill';
@@ -129,111 +117,6 @@ export type SkillDto = ResourceRevision<'skill', SkillId, SkillRevisionId> &
     paths: readonly LogicalPath[];
   }>;
 
-/** Input accepted by {@link importSkillDirectory}. */
-export type ImportSkillDirectoryInput = Readonly<{
-  /** Caller-owned stable host directory whose basename is the Agent Skills name. */
-  directory: string;
-}>;
-
-/** Borrowed capabilities used while importing one Skill directory. */
-export type SkillImportDependencies = Readonly<{
-  /** Borrowed immutable-file destination retaining the validated snapshot. */
-  files: FileStore;
-
-  /** Supplies deterministic initial identity and time when needed. */
-  context?: SkillCreationContext;
-}>;
-
-/** Borrowed immutable content port used for explicit support-file disclosure. */
-export interface SkillContentReader {
-  /**
-   * Reads one exact file from one immutable tree.
-   * @param tree - Exact complete Skill snapshot identity.
-   * @param path - Canonical contained logical path.
-   * @returns Detached verified bytes or one file-plane failure.
-   */
-  read(tree: TreeRef, path: LogicalPath): Promise<ResultValue<Uint8Array, ResourcesError>>;
-}
-
-/**
- * Adapts one caller-owned immutable FileStore to Skill support disclosure.
- * @param files - Borrowed FileStore retaining exact Skill trees and blobs.
- * @returns Reader that verifies tree membership and blob integrity on every read.
- */
-export function fileStoreSkillContentReader(files: FileStore): SkillContentReader {
-  /** Contextual typing keeps the callback aligned with the public immutable-content port. */
-  const reader: SkillContentReader = {
-    /**
-     * Reads one exact member and returns detached bytes after terminal verification.
-     * @param tree - Exact immutable Skill tree selected by admitted behavior.
-     * @param path - Validated contained file path requested for disclosure.
-     * @returns Detached verified bytes or one bounded Skill content failure.
-     */
-    async read(tree, path) {
-      /** Restores and verifies the exact immutable Skill tree before support disclosure. */
-      const restored = await restoreTree(files, tree);
-      if (!restored.ok) {
-        return Result.error(
-          new ResourcesError('skill_reference_missing', 'Skill tree could not be restored', {
-            details: { path },
-            cause: restored.error,
-          }),
-        );
-      }
-      /** Restricts reads to a file admitted in the Skill snapshot rather than arbitrary store content. */
-      const entry = restored.value.files.find((candidate) => candidate.path === path);
-      if (entry === undefined) {
-        return Result.error(
-          new ResourcesError('skill_reference_missing', 'Skill support path is not in the immutable tree', {
-            details: { path },
-          }),
-        );
-      }
-      /** Opens the exact content-addressed blob only after tree membership succeeds. */
-      const opened = await files.blobs.read(entry.blob);
-      if (!opened.ok) {
-        return Result.error(
-          new ResourcesError('skill_reference_missing', 'Skill support blob is unavailable', {
-            details: { path },
-            cause: opened.error,
-          }),
-        );
-      }
-      /** Chunk accumulation occurs only after the exact BlobRef was selected from the tree. */
-      const chunks: Uint8Array[] = [];
-      /** Tracks verified bytes independently from chunks so transport framing cannot bypass size limits. */
-      let byteLength = 0;
-      try {
-        /** Consumes the stream fully because BlobStore integrity is established at terminal completion. */
-        for await (const chunk of opened.value.content) {
-          /** Detaches each store-owned chunk before retaining it beyond the iteration boundary. */
-          const copied = Uint8Array.from(chunk);
-          chunks.push(copied);
-          byteLength += copied.byteLength;
-        }
-      } catch (cause) {
-        return Result.error(
-          new ResourcesError('skill_source_changed', 'Skill support blob failed integrity verification', {
-            details: { path },
-            cause,
-          }),
-        );
-      }
-      /** One detached buffer prevents the FileStore stream from escaping its read lifetime. */
-      const content = new Uint8Array(byteLength);
-      /** Copies verified chunks into one result without exposing the FileStore's buffers. */
-      let offset = 0;
-      /** Preserves provider chunk order when reconstructing the exact file bytes. */
-      for (const chunk of chunks) {
-        content.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      return Result.ok(content);
-    },
-  };
-  return Object.freeze(reader);
-}
-
 /** Complete instruction disclosure returned by explicit Skill behavior. */
 export type LoadedSkillInstructions = Readonly<{
   /** Exact Skill revision whose instructions are disclosed. */
@@ -243,20 +126,8 @@ export type LoadedSkillInstructions = Readonly<{
   content: string;
 }>;
 
-/** Complete support-file disclosure returned by explicit Skill behavior. */
-export type LoadedSkillSupport = Readonly<{
-  /** Exact Skill revision whose immutable snapshot supplied the bytes. */
-  ref: SkillRef;
-
-  /** Canonical path inside the exact Skill snapshot. */
-  path: LogicalPath;
-
-  /** Detached verified support bytes. */
-  content: Uint8Array;
-}>;
-
-/** One complete in-memory regular file acquired before immutable publication. */
-type AcquiredSkillFile = Readonly<{
+/** One complete in-memory regular file admitted before immutable publication. */
+export type SkillSnapshotFile = Readonly<{
   /** Canonical slash-separated path relative to the Skill root. */
   path: LogicalPath;
 
@@ -264,7 +135,7 @@ type AcquiredSkillFile = Readonly<{
   content: Uint8Array;
 
   /** Portable executable or readable intent derived from host mode bits. */
-  mode: (typeof FileMode)[keyof typeof FileMode];
+  mode: ImmutableTree['files'][number]['mode'];
 }>;
 
 /** Parsed root document separated into manifest and body instructions. */
@@ -398,121 +269,6 @@ function parseSkillDocument(text: string, directoryName: string): ParsedSkillDoc
 }
 
 /**
- * Recursively acquires only regular files without following symbolic links.
- * @param root - Absolute or caller-relative Skill root.
- * @param relativeDirectory - Canonical relative directory currently visited.
- * @param files - Private file accumulator that never escapes mutable.
- * @param directories - Canonical directory names used to distinguish non-regular references.
- * @param resolvedRoot - Canonical root used to refuse escaping directory resolution.
- */
-async function acquireDirectory(
-  root: string,
-  relativeDirectory: string,
-  files: AcquiredSkillFile[],
-  directories: LogicalPath[],
-  resolvedRoot: string,
-): Promise<void> {
-  /** Host path stays inside the already-lstat-checked traversal. */
-  const directory = relativeDirectory.length === 0 ? root : join(root, ...relativeDirectory.split('/'));
-  /** Directory identity is sampled so stable links and changes observed during this read are refused. */
-  const directoryBefore = await lstat(directory, { bigint: true });
-  if (!directoryBefore.isDirectory() || directoryBefore.isSymbolicLink()) {
-    throw new ResourcesError('skill_source_changed', 'Skill directory changed during acquisition', {
-      details: { path: relativeDirectory || '.' },
-    });
-  }
-  /** Canonical host containment refuses an escaping directory visible at this observation point. */
-  const resolvedDirectory = await realpath(directory);
-  /** Relative canonical path proves the resolved directory stays under the root. */
-  const fromRoot = relative(resolvedRoot, resolvedDirectory);
-  if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-    throw new TypeError(`Skill directory escaped its root: ${relativeDirectory || '.'}`);
-  }
-  /** Bytewise name sorting makes host enumeration order irrelevant. */
-  const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) =>
-    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
-  );
-  /** Every host entry is classified before content can enter the snapshot. */
-  for (const entry of entries) {
-    /** Logical path uses product slash semantics independently of the host platform. */
-    const relativePath = relativeDirectory.length === 0 ? entry.name : `${relativeDirectory}/${entry.name}`;
-    /** lstat ensures a symbolic link never becomes a traversed directory or copied file. */
-    const status = await lstat(join(directory, entry.name));
-    if (status.isSymbolicLink()) {
-      throw new ResourcesError('skill_link_refused', 'Symbolic links are not allowed in Skills', {
-        details: { path: relativePath },
-      });
-    }
-    if (status.isDirectory()) {
-      directories.push(LogicalPathSchema.parse(relativePath));
-      await acquireDirectory(root, relativePath, files, directories, resolvedRoot);
-      continue;
-    }
-    if (!status.isFile()) throw new TypeError(`Special files are not allowed: ${relativePath}`);
-    if (files.length >= MAX_SKILL_FILES) throw new TypeError('Skill contains too many files');
-    /** LogicalPath admission rejects traversal syntax, reserved paths, and invalid Unicode. */
-    const path = LogicalPathSchema.parse(relativePath);
-    /** No-follow open closes the lstat/read race that could otherwise capture an outside file. */
-    const handle = await open(join(directory, entry.name), constants.O_RDONLY | constants.O_NOFOLLOW);
-    /** File-descriptor identity remains stable even if its directory entry is concurrently replaced. */
-    let content: Uint8Array;
-    /** Mode comes from the opened object, not the earlier path observation. */
-    let mode: (typeof FileMode)[keyof typeof FileMode];
-    try {
-      /** Bigint timestamps and inode identity expose changes during the complete read. */
-      const before = await handle.stat({ bigint: true });
-      if (!before.isFile()) {
-        throw new ResourcesError('skill_reference_not_regular', 'Skill entry is not a regular file', {
-          details: { path: relativePath },
-        });
-      }
-      content = Uint8Array.from(await handle.readFile());
-      /** Post-read descriptor state proves the opened file remained stable. */
-      const after = await handle.stat({ bigint: true });
-      if (
-        before.dev !== after.dev ||
-        before.ino !== after.ino ||
-        before.size !== after.size ||
-        before.mtimeNs !== after.mtimeNs ||
-        before.ctimeNs !== after.ctimeNs ||
-        BigInt(content.byteLength) !== after.size
-      ) {
-        throw new ResourcesError('skill_source_changed', 'Skill file changed during acquisition', {
-          details: { path: relativePath },
-        });
-      }
-      mode = before.mode & 0o111n ? FileMode.executable : FileMode.readable;
-    } finally {
-      await handle.close();
-    }
-    /** Aggregate bytes are bounded across the complete directory, not per file. */
-    const priorBytes = files.reduce((total, file) => total + file.content.byteLength, 0);
-    if (priorBytes + content.byteLength > MAX_SKILL_BYTES) throw new TypeError('Skill content exceeds byte limit');
-    files.push(
-      Object.freeze({
-        path,
-        content,
-        mode,
-      }),
-    );
-  }
-  /** A changed directory frontier invalidates the whole acquisition rather than publishing a mixed snapshot. */
-  const directoryAfter = await lstat(directory, { bigint: true });
-  if (
-    !directoryAfter.isDirectory() ||
-    directoryAfter.isSymbolicLink() ||
-    directoryBefore.dev !== directoryAfter.dev ||
-    directoryBefore.ino !== directoryAfter.ino ||
-    directoryBefore.mtimeNs !== directoryAfter.mtimeNs ||
-    directoryBefore.ctimeNs !== directoryAfter.ctimeNs
-  ) {
-    throw new ResourcesError('skill_source_changed', 'Skill directory changed during acquisition', {
-      details: { path: relativeDirectory || '.' },
-    });
-  }
-}
-
-/**
  * Selects local-looking Markdown references and ignores URLs, anchors, and code.
  * @param text - Markdown source inspected without executing it.
  * @returns Raw local path candidates in source order.
@@ -556,7 +312,7 @@ function localReferenceCandidates(text: string): readonly string[] {
  * @param directories - Canonical directories observed during source acquisition.
  */
 function validateContainedReferences(
-  acquired: readonly AcquiredSkillFile[],
+  acquired: readonly SkillSnapshotFile[],
   directories: readonly LogicalPath[] = [],
 ): void {
   /** Set enables exact existence checks after path normalization. */
@@ -620,7 +376,7 @@ export class Skill implements ResourceRevision<'skill', SkillId, SkillRevisionId
   readonly resource = 'skill' as const;
 
   /** First creation instant shared by all revisions. */
-  readonly createdAt: SkillDto['createdAt'];
+  readonly createdAt: SkillState['createdAt'];
 
   /** Manifest-derived name; callers cannot contradict `SKILL.md`. */
   readonly name: string;
@@ -635,7 +391,7 @@ export class Skill implements ResourceRevision<'skill', SkillId, SkillRevisionId
   readonly previousRevisionId?: SkillRevisionId;
 
   /** Instant this exact revision was created. */
-  readonly updatedAt: SkillDto['updatedAt'];
+  readonly updatedAt: SkillState['updatedAt'];
 
   /** Validated current Agent Skills manifest. */
   readonly manifest: SkillManifest;
@@ -715,30 +471,151 @@ export class Skill implements ResourceRevision<'skill', SkillId, SkillRevisionId
     }
     return this.#instructions;
   }
+}
 
-  /**
-   * Emits JSON-safe exact state for an API, database, or asynchronous update boundary.
-   * @returns Frozen DTO carrying tree identity but no in-memory file content.
-   */
-  toJSON(): SkillDto {
-    if (!ADMITTED_SKILLS.has(this)) {
-      throw new ResourcesError('resources_invalid_skill', 'Skill serialization requires admitted behavior');
-    }
-    return Object.freeze({
-      id: this.id,
-      object: this.object,
-      resource: this.resource,
-      createdAt: this.createdAt,
-      name: this.name,
-      revisionId: this.revisionId,
-      revision: this.revision,
-      ...(this.previousRevisionId === undefined ? {} : { previousRevisionId: this.previousRevisionId }),
-      updatedAt: this.updatedAt,
-      manifest: this.manifest,
-      tree: this.tree.ref,
-      paths: this.paths,
-      contentDigest: this.contentDigest,
+/**
+ * Projects intrinsic Skill state without exposing retained instructions or file bytes.
+ * @param skill - Exact admitted Skill behavior.
+ * @returns Frozen state naming the immutable tree and complete path catalogue.
+ * @internal
+ */
+export function skillState(skill: Skill): SkillState {
+  if (!ADMITTED_SKILLS.has(skill)) {
+    throw new ResourcesError('resources_invalid_skill', 'Skill state projection requires admitted behavior');
+  }
+  return Object.freeze({
+    id: skill.id,
+    object: skill.object,
+    resource: skill.resource,
+    createdAt: skill.createdAt,
+    name: skill.name,
+    revisionId: skill.revisionId,
+    revision: skill.revision,
+    ...(skill.previousRevisionId === undefined ? {} : { previousRevisionId: skill.previousRevisionId }),
+    updatedAt: skill.updatedAt,
+    manifest: skill.manifest,
+    tree: skill.tree.ref,
+    paths: skill.paths,
+    contentDigest: skill.contentDigest,
+  });
+}
+
+/** Initial or child identity facts accepted by the pure Skill snapshot installer. */
+export type InstallSkillSnapshotOperation =
+  | Readonly<{
+      /** Selects initial Skill construction. */
+      kind: 'initial';
+
+      /** Supplies exact initial identity and trusted time. */
+      context: SkillCreationContext;
+    }>
+  | Readonly<{
+      /** Selects one exact child revision. */
+      kind: 'revision';
+
+      /** Supplies the exact admitted parent. */
+      parent: Skill;
+
+      /** Supplies fresh child identity and trusted time. */
+      context: SkillRevisionContext;
+    }>;
+
+/** Complete acquired snapshot submitted to Agent Skills domain admission. */
+export type InstallSkillSnapshotInput = Readonly<{
+  /** Physical directory basename used only for the Agent Skills name invariant. */
+  directoryName: string;
+
+  /** Detached regular files in deterministic logical-path order. */
+  files: readonly SkillSnapshotFile[];
+
+  /** Contained directories used to distinguish invalid non-regular references. */
+  directories: readonly LogicalPath[];
+
+  /** Immutable tree identity already planned from the exact detached files. */
+  tree: ImmutableTree;
+}>;
+
+/**
+ * Proves an initial or child Skill operation before a source adapter performs I/O.
+ * @param operation - Proposed initial or exact child identity facts.
+ * @throws {ResourcesError} When parent provenance or child identity is invalid.
+ * @internal
+ */
+export function assertSkillSnapshotOperation(operation: InstallSkillSnapshotOperation): void {
+  if (operation.kind !== 'revision') return;
+  if (!ADMITTED_SKILLS.has(operation.parent)) {
+    throw new ResourcesError('resources_skill_transition_refused', 'Skill reimport requires the exact admitted parent');
+  }
+  try {
+    createRevisionIdentity('skill', operation.parent.name, operation.parent, operation.context);
+  } catch (cause) {
+    throw new ResourcesError('resources_skill_transition_refused', 'Skill reimport requires valid child facts', {
+      cause,
     });
+  }
+}
+
+/**
+ * Installs behavior from a detached immutable Skill snapshot without source or storage I/O.
+ * @param input - Complete acquired files, directory catalogue, and planned immutable tree.
+ * @param operation - Explicit initial or child identity facts.
+ * @returns Admitted Skill behavior or one exact convention or transition refusal.
+ * @internal
+ */
+export function installSkillSnapshot(
+  input: InstallSkillSnapshotInput,
+  operation: InstallSkillSnapshotOperation,
+): ResultValue<Skill, ResourcesError> {
+  try {
+    /** Reuses the same pre-effect operation proof at the final domain installation boundary. */
+    assertSkillSnapshotOperation(operation);
+    /** Child identity is admitted before content comparison can publish a replacement revision. */
+    const childIdentity =
+      operation.kind === 'revision'
+        ? createRevisionIdentity('skill', operation.parent.name, operation.parent, operation.context)
+        : undefined;
+    /** Root document is mandatory and selected by exact conventional name. */
+    const root = input.files.find((file) => file.path === 'SKILL.md');
+    if (root === undefined) {
+      return Result.error(new ResourcesError('skill_manifest_missing', 'Skill directory must contain root SKILL.md'));
+    }
+    /** Strict decoding keeps invalid source bytes outside Agent Skills semantics. */
+    let rootText: string;
+    try {
+      rootText = UTF8_DECODER.decode(root.content);
+    } catch (cause) {
+      return Result.error(new ResourcesError('skill_manifest_invalid_utf8', 'SKILL.md is not valid UTF-8', { cause }));
+    }
+    /** Manifest parsing and instruction ownership remain independent of the host acquisition adapter. */
+    const document = parseSkillDocument(rootText, input.directoryName);
+    /** Every Markdown reference must resolve inside the detached complete snapshot. */
+    validateContainedReferences(input.files, input.directories);
+    if (operation.kind === 'revision' && operation.parent.name !== document.manifest.name) {
+      return Result.error(
+        new ResourcesError('resources_skill_transition_refused', 'A Skill revision cannot change its name'),
+      );
+    }
+    if (
+      operation.kind === 'revision' &&
+      JSON.stringify(operation.parent.tree.ref) === JSON.stringify(input.tree.ref) &&
+      JSON.stringify(operation.parent.manifest) === JSON.stringify(document.manifest)
+    ) {
+      return Result.error(
+        new ResourcesError('resources_skill_transition_refused', 'A Skill revision must change directory content'),
+      );
+    }
+    /** Initial and child identity both cross the same already-admitted behavior constructor. */
+    const identity =
+      operation.kind === 'initial'
+        ? createInitialRevisionIdentity('skill', document.manifest.name, initialResourceContext(operation.context))
+        : (childIdentity as RevisionIdentity<'skill', SkillId, SkillRevisionId>);
+    return Result.ok(
+      new InstalledSkill(SKILL_CONSTRUCTION, identity, document.manifest, document.instructions, input.tree),
+    );
+  } catch (cause) {
+    /** Preserves exact Skill refusals while bounding malformed identity or snapshot state. */
+    if (cause instanceof ResourcesError) return Result.error(cause);
+    return Result.error(new ResourcesError('resources_invalid_skill', 'Invalid Agent Skill snapshot', { cause }));
   }
 }
 
@@ -761,169 +638,6 @@ class InstalledSkill extends Skill {
   ) {
     super(token, identity, manifest, instructions, tree);
   }
-}
-
-/**
- * Imports, validates, and snapshots one initial or child Agent Skills directory.
- * @param input - Host directory and borrowed immutable-file destination.
- * @param dependencies - Borrowed immutable files and optional initial facts.
- * @param previous - Exact admitted parent for a child reimport.
- * @param revisionContext - Required child identity and trusted observed time.
- * @returns Behavior-bearing Skill or exact acquisition/specification/publication failure.
- */
-async function importSkillDirectoryRevision(
-  input: ImportSkillDirectoryInput,
-  dependencies: SkillImportDependencies,
-  previous?: Skill,
-  revisionContext?: SkillRevisionContext,
-): Promise<ResultValue<Skill, ResourcesError>> {
-  try {
-    if (previous !== undefined && !ADMITTED_SKILLS.has(previous)) {
-      return Result.error(
-        new ResourcesError('resources_skill_transition_refused', 'Skill reimport requires the exact admitted parent'),
-      );
-    }
-    if (previous !== undefined && revisionContext === undefined) {
-      return Result.error(
-        new ResourcesError('resources_skill_transition_refused', 'Skill reimport requires explicit child facts'),
-      );
-    }
-    /** Child facts are pure preconditions and must fail before any host acquisition or publication. */
-    let childIdentity: RevisionIdentity<'skill', SkillId, SkillRevisionId> | undefined;
-    if (previous !== undefined && revisionContext !== undefined) {
-      try {
-        childIdentity = createRevisionIdentity('skill', previous.name, previous, revisionContext);
-      } catch (cause) {
-        return Result.error(
-          new ResourcesError('resources_skill_transition_refused', 'Skill reimport requires valid child facts', {
-            cause,
-          }),
-        );
-      }
-    }
-    /** Root itself cannot be a symlink or non-directory masquerading as a Skill. */
-    let rootStatus: Awaited<ReturnType<typeof lstat>>;
-    try {
-      rootStatus = await lstat(input.directory);
-    } catch (cause) {
-      return Result.error(
-        new ResourcesError('skill_manifest_missing', 'Skill directory or SKILL.md is missing', { cause }),
-      );
-    }
-    if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) {
-      return Result.error(new ResourcesError('skill_manifest_not_regular', 'Skill root must be a real directory'));
-    }
-    /** Complete acquisition and bounded copying happen before FileStore publication. */
-    const acquired: AcquiredSkillFile[] = [];
-    /** Directory catalogue preserves exact non-regular reference diagnostics. */
-    const directories: LogicalPath[] = [];
-    /** Canonical root anchors containment for every recursively acquired directory. */
-    const resolvedRoot = await realpath(input.directory);
-    await acquireDirectory(input.directory, '', acquired, directories, resolvedRoot);
-    /** Root document is mandatory and selected by exact conventional name. */
-    const root = acquired.find((file) => file.path === 'SKILL.md');
-    if (root === undefined) {
-      return Result.error(new ResourcesError('skill_manifest_missing', 'Skill directory must contain root SKILL.md'));
-    }
-    /** Strict decode and specification validation derive all Resource metadata. */
-    let rootText: string;
-    try {
-      rootText = UTF8_DECODER.decode(root.content);
-    } catch (cause) {
-      return Result.error(new ResourcesError('skill_manifest_invalid_utf8', 'SKILL.md is not valid UTF-8', { cause }));
-    }
-    /** Derives manifest identity from the required root document and containing directory. */
-    const document = parseSkillDocument(rootText, basename(input.directory));
-    /** Every supporting reference must resolve inside the complete acquired snapshot. */
-    validateContainedReferences(acquired, directories);
-    if (previous !== undefined && previous.name !== document.manifest.name) {
-      return Result.error(
-        new ResourcesError('resources_skill_transition_refused', 'A Skill revision cannot change its name'),
-      );
-    }
-    /** Reusable immutable sources drive both isolated planning and eventual caller publication. */
-    const sources = acquired.map((file) => ({ path: file.path, content: file.content, mode: file.mode }));
-    /** Isolated memory publication derives canonical tree identity without touching caller state. */
-    const staging = memoryFileStore();
-    /** Candidate identity is retained outside cleanup so no staging capability can escape. */
-    let candidate: Awaited<ReturnType<typeof publishTree>>;
-    try {
-      /** Candidate identity must settle before a no-change transition can be refused safely. */
-      candidate = await publishTree(staging, sources);
-    } finally {
-      await staging.close();
-    }
-    if (!candidate.ok) {
-      return Result.error(
-        new ResourcesError('resources_skill_import_failed', 'Skill snapshot planning failed', {
-          cause: candidate.error,
-        }),
-      );
-    }
-    if (previous !== undefined) {
-      /** Unchanged content does not invent a new durable revision. */
-      if (
-        JSON.stringify(previous.tree.ref) === JSON.stringify(candidate.value.ref) &&
-        JSON.stringify(previous.manifest) === JSON.stringify(document.manifest)
-      ) {
-        return Result.error(
-          new ResourcesError('resources_skill_transition_refused', 'A Skill revision must change directory content'),
-        );
-      }
-    }
-    /** Caller publication begins only after every validation and transition refusal has settled. */
-    const published = await publishTree(dependencies.files, sources);
-    if (!published.ok) {
-      return Result.error(
-        new ResourcesError('resources_skill_import_failed', 'Skill snapshot publication failed', {
-          cause: published.error,
-        }),
-      );
-    }
-    /** Initial or child identity follows validation and successful immutable publication. */
-    const identity =
-      previous === undefined
-        ? createInitialRevisionIdentity('skill', document.manifest.name, initialResourceContext(dependencies.context))
-        : (childIdentity as RevisionIdentity<'skill', SkillId, SkillRevisionId>);
-    return Result.ok(
-      new InstalledSkill(SKILL_CONSTRUCTION, identity, document.manifest, document.instructions, published.value),
-    );
-  } catch (cause) {
-    if (cause instanceof ResourcesError) return Result.error(cause);
-    return Result.error(new ResourcesError('resources_invalid_skill', 'Invalid Agent Skill directory', { cause }));
-  }
-}
-
-/**
- * Imports, validates, and snapshots one real Agent Skills directory.
- * @param input - Stable host directory acquired by the Node source adapter.
- * @param dependencies - Borrowed immutable files and optional deterministic facts.
- * @returns Initial behavior-bearing Skill or exact import refusal.
- */
-export function importSkillDirectory(
-  input: ImportSkillDirectoryInput,
-  dependencies: SkillImportDependencies,
-): Promise<ResultValue<Skill, ResourcesError>> {
-  return importSkillDirectoryRevision(input, dependencies);
-}
-
-/**
- * Reimports changed directory content as one exact child Skill revision.
- * @param parent - Exact admitted parent Skill.
- * @param input - Stable host directory acquired by the Node source adapter.
- * @param dependencies - Borrowed immutable files and explicit child facts.
- * @returns Child Skill or exact no-change/source/transition refusal.
- */
-export function reimportSkillDirectory(
-  parent: Skill,
-  input: ImportSkillDirectoryInput,
-  dependencies: Omit<SkillImportDependencies, 'context'> &
-    Readonly<{
-      /** Supplies fresh child identity and trusted time only after reimport acquisition succeeds. */
-      context: SkillRevisionContext;
-    }>,
-): Promise<ResultValue<Skill, ResourcesError>> {
-  return importSkillDirectoryRevision(input, { files: dependencies.files }, parent, dependencies.context);
 }
 
 /**
@@ -954,90 +668,53 @@ export function loadSkillInstructions(skill: Skill): ResultValue<LoadedSkillInst
 }
 
 /**
- * Loads one contained support file through the exact immutable content port.
- * @param skill - Exact behavior-bearing Skill revision.
- * @param proposedPath - Canonical logical path retained by the Skill snapshot.
- * @param content - Borrowed reader that verifies the exact TreeRef and blob bytes.
- * @returns Detached support bytes bound to the exact Skill revision.
- */
-export async function loadSkillSupport(
-  skill: Skill,
-  proposedPath: string,
-  content: SkillContentReader,
-): Promise<ResultValue<LoadedSkillSupport, ResourcesError>> {
-  if (!ADMITTED_SKILLS.has(skill)) {
-    return Result.error(new ResourcesError('resources_invalid_skill', 'Skill support requires admitted behavior'));
-  }
-  /** Admits the requested support path before comparing it with the validated snapshot index. */
-  let path: LogicalPath;
-  try {
-    path = LogicalPathSchema.parse(proposedPath);
-  } catch (cause) {
-    return Result.error(
-      new ResourcesError('skill_reference_invalid', 'Skill support path is invalid', {
-        details: { path: proposedPath },
-        cause,
-      }),
-    );
-  }
-  if (!skill.paths.includes(path)) {
-    return Result.error(
-      new ResourcesError('skill_reference_missing', 'Skill support path is not in the immutable snapshot', {
-        details: { path },
-      }),
-    );
-  }
-  /** Reads support content through the exact Skill tree so host paths never re-enter disclosure. */
-  const loaded = await content.read(skill.tree.ref, path);
-  if (!loaded.ok) return loaded;
-  return Result.ok(Object.freeze({ ref: skillRef(skill), path, content: Uint8Array.from(loaded.value) }));
-}
-
-/**
  * Reconstructs a Skill after an explicit hydration adapter restores exact content.
- * @param dto - Transport-validated exact Skill state.
- * @param tree - Verified complete immutable tree matching the DTO reference.
+ * @param state - Admitted intrinsic Skill state.
+ * @param tree - Verified complete immutable tree matching the admitted state reference.
  * @param content - Independently copied exact bytes keyed by canonical path.
  * @returns Behavior-bearing Skill with persisted identity and revision.
  * @internal
  */
 export function hydrateSkillState(
-  dto: SkillDto,
+  state: SkillState,
   tree: ImmutableTree,
   content: ReadonlyMap<LogicalPath, Uint8Array>,
 ): Skill {
   /** Root bytes re-earn current Agent Skills manifest and instruction behavior. */
   const root = content.get(LogicalPathSchema.parse('SKILL.md'));
-  if (root === undefined) throw new ResourcesError('resources_hydration_failed', 'Skill DTO tree lacks SKILL.md');
+  if (root === undefined) throw new ResourcesError('resources_hydration_failed', 'Skill state tree lacks SKILL.md');
   /** Root parsing re-establishes manifest and instruction behavior from bytes. */
-  const document = parseSkillDocument(UTF8_DECODER.decode(root), dto.manifest.name);
-  /** Reference safety is re-proven from restored bytes, not trusted from the DTO. */
+  const document = parseSkillDocument(UTF8_DECODER.decode(root), state.manifest.name);
+  /** Reference safety is re-proven from restored bytes, not trusted from detached state. */
   const acquired = tree.files.map((file) => {
     /** Every tree entry must have bytes before reference validation can run. */
     const bytes = content.get(file.path);
     if (bytes === undefined) {
-      throw new ResourcesError('resources_hydration_failed', 'Skill DTO tree content is incomplete', {
+      throw new ResourcesError('resources_hydration_failed', 'Skill state tree content is incomplete', {
         details: { path: file.path },
       });
     }
     return Object.freeze({ path: file.path, content: bytes, mode: file.mode });
   });
   validateContainedReferences(acquired);
-  /** Transport DTO fields form exact existing identity rather than earning a new revision. */
+  /** Boundary-admitted state forms exact existing identity rather than earning a new revision. */
   const identity: RevisionIdentity<'skill', SkillId, SkillRevisionId> = Object.freeze({
-    object: dto.object,
-    id: dto.id,
-    revisionId: dto.revisionId,
-    revision: dto.revision,
-    createdAt: dto.createdAt,
-    updatedAt: dto.updatedAt,
-    ...(dto.previousRevisionId === undefined ? {} : { previousRevisionId: dto.previousRevisionId }),
-    name: dto.name,
+    object: state.object,
+    id: state.id,
+    revisionId: state.revisionId,
+    revision: state.revision,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
+    ...(state.previousRevisionId === undefined ? {} : { previousRevisionId: state.previousRevisionId }),
+    name: state.name,
   });
   /** Behavior is installed only after complete content and references prove valid. */
   const skill = new InstalledSkill(SKILL_CONSTRUCTION, identity, document.manifest, document.instructions, tree);
-  if (skill.contentDigest !== dto.contentDigest || JSON.stringify(skill.manifest) !== JSON.stringify(dto.manifest)) {
-    throw new ResourcesError('resources_hydration_failed', 'Skill DTO does not match restored behavior');
+  if (
+    skill.contentDigest !== state.contentDigest ||
+    JSON.stringify(skill.manifest) !== JSON.stringify(state.manifest)
+  ) {
+    throw new ResourcesError('resources_hydration_failed', 'Skill state does not match restored behavior');
   }
   return skill;
 }

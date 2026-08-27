@@ -3,8 +3,8 @@
 import { Result, type Result as ResultValue } from '@archer/core';
 
 import { ModelsError } from '../errors.js';
-import { assertAdmittedModel, hydrateModelState, type Model, type ModelDto } from '../targets.js';
-import { ModelCodec } from '../transport/index.js';
+import { assertAdmittedModel, hydrateModelState, type Model } from '../targets.js';
+import { ModelCodec, type ModelDto } from '../transport/index.js';
 
 /** Input required to hydrate one initial or exact child model revision. */
 export type HydrateModelInput = Readonly<{

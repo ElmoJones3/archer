@@ -8,13 +8,11 @@
 import * as z from 'zod';
 
 import {
-  CanonicalDecimalSchema,
   Result,
   TimestampSchema,
   UuidV4Schema,
   createUuidV4,
   type ArcherObject,
-  type CanonicalDecimal,
   type Result as ResultValue,
   type Sha256Digest,
   type Timestamp,
@@ -62,6 +60,9 @@ export type BudgetAllocationId = UuidV4 & {
   readonly [budgetAllocationIdBrand]: true;
 };
 
+/** Prevents detached allocation state from becoming delegated Budget authority. */
+declare const budgetAllocationBrand: unique symbol;
+
 /** Exact initial BudgetPolicy facts accepted by deterministic application boundaries. */
 export type BudgetPolicyCreationContext = ResourceCreationContext<BudgetPolicyId, BudgetPolicyRevisionId>;
 
@@ -101,27 +102,18 @@ export type BudgetPolicyRef = Readonly<{
   contentDigest: Sha256Digest;
 }>;
 
-/** Canonical JSON-safe numeric fields used only at transport boundaries. */
-export type BudgetLimitsDto = Readonly<{
-  /** Canonical generated-output ceiling when present. */
-  outputTokens?: CanonicalDecimal;
-
-  /** Canonical wall-time ceiling when present. */
-  wallTimeMs?: CanonicalDecimal;
-}>;
-
-/** JSON-safe BudgetPolicy state emitted at transport boundaries. */
-export type BudgetPolicyDto = ResourceRevision<'budget-policy', BudgetPolicyId, BudgetPolicyRevisionId> &
+/** Complete intrinsic BudgetPolicy state used by projection and hydration boundaries. */
+export type BudgetPolicyState = ResourceRevision<'budget-policy', BudgetPolicyId, BudgetPolicyRevisionId> &
   Readonly<{
     /** Narrows the Wave 6 Resource family. */
     resource: 'budget-policy';
 
-    /** Canonical exact policy ceilings. */
-    limits: BudgetLimitsDto;
+    /** Exact numeric policy ceilings owned by Budget behavior. */
+    limits: BudgetPolicyLimits;
   }>;
 
-/** One derived finite allocation ready for request preparation. */
-export type BudgetAllocation = ArcherObject<'budget-allocation', BudgetAllocationId> &
+/** Complete intrinsic state of one derived finite allocation. */
+export type BudgetAllocationState = ArcherObject<'budget-allocation', BudgetAllocationId> &
   Readonly<{
     /** Exact policy revision participating in the decision. */
     policy: BudgetPolicyRef;
@@ -140,6 +132,13 @@ export type BudgetAllocation = ArcherObject<'budget-allocation', BudgetAllocatio
 
     /** Optional absolute deadline after every wall-time intersection. */
     deadline?: Timestamp;
+  }>;
+
+/** One derived finite allocation admitted as request and parent authority. */
+export type BudgetAllocation = BudgetAllocationState &
+  Readonly<{
+    /** Compile-time evidence complements the runtime allocation provenance set. */
+    readonly [budgetAllocationBrand]: true;
   }>;
 
 /** Inputs reconciled by pure Budget allocation. */
@@ -194,7 +193,7 @@ const BudgetLimitsSchema = z
 /** Runtime-only token prevents ordinary callers from invoking the class constructor. */
 const BUDGET_CONSTRUCTION = Symbol('archer.budget.construction');
 
-/** Runtime provenance distinguishes BudgetPolicy behavior from serialized field copies. */
+/** Runtime provenance distinguishes BudgetPolicy behavior from detached state copies. */
 const ADMITTED_BUDGET_POLICIES = new WeakSet<object>();
 
 /** Runtime provenance prevents copied allocation fields from becoming delegated Budget authority. */
@@ -218,26 +217,6 @@ function admitLimits(input: BudgetLimitsInput, requireOne: boolean): BudgetPolic
     if (cause instanceof ResourcesError) throw cause;
     throw new ResourcesError('budget_limit_invalid', 'Budget limit must be a positive safe integer', { cause });
   }
-}
-
-/**
- * Converts one safe integer to its canonical decimal transport representation.
- * @param value - Positive safe integer already admitted by the Budget domain.
- * @returns Canonical base-10 text without leading zeroes.
- */
-function encodeLimit(value: number): CanonicalDecimal {
-  return CanonicalDecimalSchema.parse(String(value));
-}
-
-/**
- * Converts canonical decimal transport text into a JavaScript-safe integer.
- * @param value - Canonical non-negative decimal text from a DTO.
- * @returns Positive safe integer admitted by the Budget domain.
- */
-function decodeLimit(value: CanonicalDecimal): number {
-  /** Converts only canonical transport text back into a JavaScript-safe budget value. */
-  const parsed = Number(CanonicalDecimalSchema.parse(value));
-  return PositiveSafeIntegerSchema.parse(parsed);
 }
 
 /**
@@ -336,32 +315,31 @@ export class BudgetPolicy implements ResourceRevision<'budget-policy', BudgetPol
   allocate(input: Omit<AllocateBudgetInput, 'policy'>): ResultValue<BudgetAllocation, ResourcesError> {
     return allocateBudget({ ...input, policy: this });
   }
+}
 
-  /**
-   * Emits JSON-safe exact state for an API, database, or asynchronous update boundary.
-   * @returns Frozen DTO with canonical decimal limits.
-   */
-  toJSON(): BudgetPolicyDto {
-    if (!ADMITTED_BUDGET_POLICIES.has(this)) {
-      throw new ResourcesError('resources_invalid_budget', 'BudgetPolicy serialization requires admitted behavior');
-    }
-    return Object.freeze({
-      id: this.id,
-      object: this.object,
-      resource: this.resource,
-      createdAt: this.createdAt,
-      name: this.name,
-      revisionId: this.revisionId,
-      revision: this.revision,
-      ...(this.previousRevisionId === undefined ? {} : { previousRevisionId: this.previousRevisionId }),
-      updatedAt: this.updatedAt,
-      limits: Object.freeze({
-        ...(this.ceilings.outputTokens === undefined ? {} : { outputTokens: encodeLimit(this.ceilings.outputTokens) }),
-        ...(this.ceilings.wallTimeMs === undefined ? {} : { wallTimeMs: encodeLimit(this.ceilings.wallTimeMs) }),
-      }),
-      contentDigest: this.contentDigest,
-    });
+/**
+ * Projects intrinsic BudgetPolicy state for package transport and hydration boundaries.
+ * @param policy - Exact admitted behavior owner whose numeric limits are required.
+ * @returns Frozen domain state without transport numeric encoding.
+ * @internal
+ */
+export function budgetPolicyState(policy: BudgetPolicy): BudgetPolicyState {
+  if (!ADMITTED_BUDGET_POLICIES.has(policy)) {
+    throw new ResourcesError('resources_invalid_budget', 'BudgetPolicy state projection requires admitted behavior');
   }
+  return Object.freeze({
+    id: policy.id,
+    object: policy.object,
+    resource: policy.resource,
+    createdAt: policy.createdAt,
+    name: policy.name,
+    revisionId: policy.revisionId,
+    revision: policy.revision,
+    ...(policy.previousRevisionId === undefined ? {} : { previousRevisionId: policy.previousRevisionId }),
+    updatedAt: policy.updatedAt,
+    limits: policy.ceilings,
+    contentDigest: policy.contentDigest,
+  });
 }
 
 /** Package-local concrete policy keeps the public class non-constructible in TypeScript. */
@@ -384,7 +362,7 @@ class InstalledBudgetPolicy extends BudgetPolicy {
 /**
  * Defines one reusable BudgetPolicy with no unrelated implicit dimensions.
  * @param input - At-least-one positive ceiling and optional display label.
- * @param context - Optional deterministic initial identity and time.
+ * @param context - Explicit deterministic initial identity and time supplied by composition policy.
  * @returns Immutable policy ready to narrow and allocate.
  */
 export function defineBudgetPolicy(
@@ -393,7 +371,7 @@ export function defineBudgetPolicy(
       /** Keeps a display label optional because omitted names are derived after identity exists. */
       name?: string;
     }>,
-  context?: BudgetPolicyCreationContext,
+  context: BudgetPolicyCreationContext,
 ): BudgetPolicy {
   try {
     /** Separates display metadata from the behavior limits used for content identity. */
@@ -548,6 +526,15 @@ export function allocateBudget(input: AllocateBudgetInput): ResultValue<BudgetAl
     const selectedModel = modelRef(input.model);
     /** Normalizes the explicit trusted start once so every derived deadline shares one instant. */
     const startedAt = TimestampSchema.parse(input.startedAt);
+    if (input.parent !== undefined && startedAt < input.parent.startedAt) {
+      return Result.error(
+        new ResourcesError(
+          'resources_invalid_budget_allocation',
+          'Child BudgetAllocation cannot start before its parent',
+          { details: { parentId: input.parent.id, parentStartedAt: input.parent.startedAt, startedAt } },
+        ),
+      );
+    }
     /** Admits caller demands without confusing omission with a zero-token request. */
     const request = admitLimits(input.request ?? {}, false);
     /** Admits application hard limits independently from reusable policy limits. */
@@ -637,7 +624,7 @@ export function allocateBudget(input: AllocateBudgetInput): ResultValue<BudgetAl
       outputTokens,
       startedAt,
       ...(deadline === undefined ? {} : { deadline }),
-    });
+    }) as BudgetAllocation;
     ADMITTED_BUDGET_ALLOCATIONS.add(allocation);
     return Result.ok(allocation);
   } catch (cause) {
@@ -651,38 +638,102 @@ export function allocateBudget(input: AllocateBudgetInput): ResultValue<BudgetAl
 }
 
 /**
- * Reconstructs admitted BudgetPolicy state after transport and parent checks.
- * @param dto - Transport-validated exact policy state.
+ * Projects one admitted allocation into detached intrinsic state.
+ * @param allocation - Exact allocation earned by allocation or hydration behavior.
+ * @returns Frozen allocation state containing no runtime provenance.
+ * @internal
+ */
+export function budgetAllocationState(allocation: BudgetAllocation): BudgetAllocationState {
+  if (!ADMITTED_BUDGET_ALLOCATIONS.has(allocation)) {
+    throw new ResourcesError(
+      'resources_invalid_budget_allocation',
+      'BudgetAllocation projection requires admitted authority',
+    );
+  }
+  return copyBudgetAllocationState(allocation);
+}
+
+/**
+ * Copies and validates one allocation state without granting authority by itself.
+ * @param state - Transport-admitted state already matched to exact behavior owners.
+ * @returns Detached deeply immutable allocation state.
+ */
+function copyBudgetAllocationState(state: BudgetAllocationState): BudgetAllocationState {
+  /** Exact scalar admission keeps internal restoration honest even when called from JavaScript. */
+  const id = UuidV4Schema.parse(state.id) as BudgetAllocationId;
+  /** Allocation creation is admitted independently before it is compared with the operation start. */
+  const createdAt = TimestampSchema.parse(state.createdAt);
+  /** The trusted operation start anchors every absolute deadline check. */
+  const startedAt = TimestampSchema.parse(state.startedAt);
+  /** Parent authority always carries a finite positive generated-output ceiling. */
+  const outputTokens = PositiveSafeIntegerSchema.parse(state.outputTokens);
+  /** Optional time authority is admitted before ordering is enforced. */
+  const deadline = state.deadline === undefined ? undefined : TimestampSchema.parse(state.deadline);
+  /** Optional ancestry identity remains detached until hydration supplies the exact parent object. */
+  const parentId =
+    state.parentId === undefined ? undefined : (UuidV4Schema.parse(state.parentId) as BudgetAllocationId);
+  if (state.object !== 'budget-allocation' || createdAt !== startedAt) {
+    throw new ResourcesError(
+      'resources_invalid_budget_allocation',
+      'BudgetAllocation identity and start timestamps do not agree',
+    );
+  }
+  if (deadline !== undefined && deadline <= startedAt) {
+    throw new ResourcesError('resources_invalid_budget_allocation', 'BudgetAllocation deadline must follow its start');
+  }
+  if (parentId === id) {
+    throw new ResourcesError('resources_invalid_budget_allocation', 'BudgetAllocation cannot parent itself');
+  }
+  return Object.freeze({
+    id,
+    object: 'budget-allocation',
+    createdAt,
+    policy: Object.freeze({ ...state.policy }),
+    model: Object.freeze({ ...state.model }),
+    ...(parentId === undefined ? {} : { parentId }),
+    outputTokens,
+    startedAt,
+    ...(deadline === undefined ? {} : { deadline }),
+  });
+}
+
+/**
+ * Reconstructs allocation authority after transport, owner, ancestry, and authenticity checks.
+ * @param state - Canonical intrinsic allocation state admitted by the hydration boundary.
+ * @returns Exact allocation recognized as future parent authority.
+ * @internal
+ */
+export function hydrateBudgetAllocationState(state: BudgetAllocationState): BudgetAllocation {
+  /** Domain copying rechecks scalar invariants immediately before runtime authority is installed. */
+  const allocation = copyBudgetAllocationState(state) as BudgetAllocation;
+  ADMITTED_BUDGET_ALLOCATIONS.add(allocation);
+  return allocation;
+}
+
+/**
+ * Reconstructs admitted BudgetPolicy behavior after boundary and parent checks.
+ * @param state - Admitted intrinsic numeric policy state.
  * @returns Behavior-bearing policy with persisted identity.
  * @internal
  */
-export function hydrateBudgetPolicyState(dto: BudgetPolicyDto): BudgetPolicy {
-  /** Decodes portable decimal ceilings before restoring behavior provenance. */
-  const limits = admitLimits(
-    {
-      ...(dto.limits.outputTokens === undefined ? {} : { outputTokens: decodeLimit(dto.limits.outputTokens) }),
-      ...(dto.limits.wallTimeMs === undefined ? {} : { wallTimeMs: decodeLimit(dto.limits.wallTimeMs) }),
-    },
-    true,
-  );
+export function hydrateBudgetPolicyState(state: BudgetPolicyState): BudgetPolicy {
+  /** Re-admits numeric ceilings before restoring behavior provenance. */
+  const limits = admitLimits(state.limits, true);
   /** Reconstructs lineage fields exactly; hydration must not mint new identity or time. */
   const identity: RevisionIdentity<'budget-policy', BudgetPolicyId, BudgetPolicyRevisionId> = Object.freeze({
-    object: dto.object,
-    id: dto.id,
-    revisionId: dto.revisionId,
-    revision: dto.revision,
-    createdAt: dto.createdAt,
-    updatedAt: dto.updatedAt,
-    ...(dto.previousRevisionId === undefined ? {} : { previousRevisionId: dto.previousRevisionId }),
-    name: dto.name,
+    object: state.object,
+    id: state.id,
+    revisionId: state.revisionId,
+    revision: state.revision,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
+    ...(state.previousRevisionId === undefined ? {} : { previousRevisionId: state.previousRevisionId }),
+    name: state.name,
   });
-  /** Constructs behavior before comparing its canonical content identity with transported evidence. */
+  /** Constructs behavior before comparing its canonical content identity with admitted state evidence. */
   const policy = new InstalledBudgetPolicy(BUDGET_CONSTRUCTION, identity, limits);
-  if (policy.contentDigest !== dto.contentDigest) {
-    throw new ResourcesError(
-      'resources_hydration_failed',
-      'BudgetPolicy DTO content does not match its content digest',
-    );
+  if (policy.contentDigest !== state.contentDigest) {
+    throw new ResourcesError('resources_hydration_failed', 'BudgetPolicy state does not match its content digest');
   }
   return policy;
 }

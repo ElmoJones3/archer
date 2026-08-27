@@ -9,6 +9,7 @@ import {
   type BudgetAllocation,
   type BudgetAllocationId,
 } from '../src/entrypoints/budgets.js';
+import { encodeBudgetPolicy } from '../src/transport/index.js';
 import { budgetContext, budgetRevisionContext, modelFixture, timestamp, uuid } from './support.js';
 
 describe('BudgetPolicy behavior', () => {
@@ -32,7 +33,7 @@ describe('BudgetPolicy behavior', () => {
     const wallOnly = defineBudgetPolicy({ wallTimeMs: 2_000 }, budgetContext(14));
     expect(outputOnly.ceilings).toEqual({ outputTokens: 800 });
     expect(wallOnly.ceilings).toEqual({ wallTimeMs: 2_000 });
-    expect(outputOnly.toJSON().limits).toEqual({ outputTokens: '800' });
+    expect(encodeBudgetPolicy(outputOnly).limits).toEqual({ outputTokens: '800' });
   });
 
   it('accepts a real narrowing, inherits omissions, and refuses equality or widening without mutation', () => {
@@ -167,15 +168,49 @@ describe('BudgetPolicy behavior', () => {
     ).toEqual({ ok: false, error: expect.objectContaining({ code: 'budget_parent_expired' }) });
   });
 
+  it('refuses a child allocation that starts before its parent without mutating either input', () => {
+    /** Uses output-only authority so causal time is the only disputed parent invariant. */
+    const policy = defineBudgetPolicy({ outputTokens: 1_000 }, budgetContext(56));
+    /** Keeps Model capacity equal to policy so neither output source can cause refusal. */
+    const model = modelFixture(58, 1_000);
+    /** Earns a genuine parent at second two before proposing an earlier child start. */
+    const parent = allocateBudget({
+      allocationId: uuid(60) as BudgetAllocationId,
+      policy,
+      model,
+      startedAt: timestamp(2),
+    });
+    if (!parent.ok) throw parent.error;
+    /** Freezes the complete proposed child so refusal must preserve caller-owned input. */
+    const input = Object.freeze({
+      allocationId: uuid(61) as BudgetAllocationId,
+      policy,
+      model,
+      parent: parent.value,
+      startedAt: timestamp(1),
+    });
+    /** Snapshots both authorities before the causal refusal is evaluated. */
+    const before = JSON.stringify({ input, parent: parent.value });
+
+    /** Evaluates the impossible child start through ordinary allocation behavior. */
+    const child = allocateBudget(input);
+
+    expect(child).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'resources_invalid_budget_allocation' }),
+    });
+    expect(JSON.stringify({ input, parent: parent.value })).toBe(before);
+  });
+
   it('refuses an absolute deadline outside the supported timestamp range', () => {
     /** Uses a maximum safe duration so overflow is caused by deadline arithmetic, not input admission. */
-    const policy = defineBudgetPolicy({ outputTokens: 1_000, wallTimeMs: Number.MAX_SAFE_INTEGER }, budgetContext(56));
+    const policy = defineBudgetPolicy({ outputTokens: 1_000, wallTimeMs: Number.MAX_SAFE_INTEGER }, budgetContext(70));
     /** Keeps the Model ceiling equal so deadline overflow remains the only refusal. */
-    const model = modelFixture(58, 1_000);
+    const model = modelFixture(72, 1_000);
 
     expect(
       allocateBudget({
-        allocationId: uuid(60) as BudgetAllocationId,
+        allocationId: uuid(74) as BudgetAllocationId,
         policy,
         model,
         startedAt: timestamp(),

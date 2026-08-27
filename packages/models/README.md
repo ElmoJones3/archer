@@ -18,28 +18,40 @@ const binding = bindOpenAIAiSdkModel({
 });
 const router = createAiSdkModelRouter({ models: [binding] });
 
-const request = createModelStepRequest({
-  model: binding.target,
-  instructions: ['Answer clearly and briefly.'],
-  messages: [{ role: 'user', content: 'Summarize this release note.' }],
-  maxOutputTokens: 600,
-});
-const started = await router.startStep(request);
-if (!started.ok) throw started.error;
-
-const subscription = started.value.events.subscribe();
 try {
-  for await (const delivery of subscription) {
-    if (delivery.kind === 'gap') {
-      console.warn(`Missed ${delivery.lostItems} live updates; use the terminal result to redraw.`);
-    } else if (delivery.value.type === 'text-delta') process.stdout.write(delivery.value.text);
+  const request = createModelStepRequest({
+    model: binding.target,
+    instructions: ['Answer clearly and briefly.'],
+    messages: [{ role: 'user', content: 'Summarize this release note.' }],
+    maxOutputTokens: 600,
+  });
+  const started = await router.startStep(request);
+  if (!started.ok) throw started.error;
+
+  const subscription = started.value.events.subscribe();
+  try {
+    let missedLiveUpdates = false;
+    for await (const delivery of subscription) {
+      if (delivery.kind === 'gap') {
+        missedLiveUpdates = true;
+        console.warn(`Missed ${delivery.lostItems} live updates.`);
+      } else if (delivery.value.type === 'text-delta') process.stdout.write(delivery.value.text);
+    }
+    const result = await started.value.result;
+    if (result.type === 'completed' && missedLiveUpdates) {
+      const complete = result.content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('');
+      process.stdout.write(`\nComplete response: ${complete}`);
+    }
+    if (result.type === 'failed') console.error(result.error.code, result.retry);
+    if (result.type === 'aborted') console.error('Model step aborted:', result.reason);
+  } finally {
+    await subscription.close();
+    await started.value.close();
   }
-  const result = await started.value.result;
-  if (result.type === 'failed') console.error(result.error.code, result.retry);
-  if (result.type === 'aborted') console.error('Model step aborted:', result.reason);
 } finally {
-  await subscription.close();
-  await started.value.close();
   await router.close();
 }
 ```
@@ -122,7 +134,8 @@ done.
   requests.
 - `@archer/models/ai-sdk` binds caller-configured AI SDK models and creates the
   first-party router.
-- `@archer/models/transport` encodes and decodes detached JSON-safe DTOs.
+- `@archer/models/transport` owns explicit `encodeModel` and
+  `encodeModelStepRequest` mappings plus detached JSON-safe DTO codecs.
 - `@archer/models/hydration` restores Model behavior only after exact parent
   checks. Decoding a request never grants permission to execute it.
 

@@ -15,41 +15,100 @@ import {
   TimestampSchema,
   UuidV4Schema,
   fromZod,
+  type CanonicalDecimal,
 } from '@archer/core';
 import { PrincipalIdSchema } from '@archer/core/authority';
 import { LogicalPathSchema, TreeRefSchema } from '@archer/files';
 
-import type { BudgetPolicyDto, BudgetPolicyId, BudgetPolicyRevisionId } from '../budgets/index.js';
+import {
+  budgetAllocationState,
+  budgetPolicyState,
+  type BudgetAllocation,
+  type BudgetAllocationId,
+  type BudgetAllocationState,
+  type BudgetPolicy,
+  type BudgetPolicyId,
+  type BudgetPolicyRevisionId,
+  type BudgetPolicyState,
+} from '../budgets/index.js';
 import { resourceDigest } from '../common.js';
-import type {
-  ResourceAdmissionChain,
-  ResourceAdmissionDto,
-  ResourceAdmissionId,
-  ResourceControlRef,
-  ResourceProposalDto,
-  ResourceProposalId,
-  ResourceReviewDto,
-  ResourceReviewId,
-  ResourceRevocationDto,
-  ResourceRevocationId,
+import {
+  resourceAdmissionChainState,
+  resourceProposalState,
+  resourceReviewState,
+  resourceRevocationState,
+  type ResourceProposal,
+  type ResourceReview,
+  type ResourceAdmissionChain,
+  type ResourceAdmissionState,
+  type ResourceAdmissionId,
+  type ResourceControlRef,
+  type ResourceProposalState,
+  type ResourceProposalId,
+  type ResourceReviewState,
+  type ResourceReviewId,
+  type ResourceRevocationState,
+  type ResourceRevocationId,
+  type VerifiedResourceAdmission,
+  type VerifiedResourceRevocation,
 } from '../control/index.js';
-import type { AgentProfileDto, AgentProfileId, AgentProfileRevisionId } from '../profiles/index.js';
-import type { PromptDto, PromptId, PromptRevisionId } from '../prompts/index.js';
-import type { ResourceSetDto, ResourceSetId } from '../session.js';
-import type { SkillDto, SkillId, SkillRevisionId } from '../skills/index.js';
+import {
+  agentProfileState,
+  type AgentProfile,
+  type AgentProfileId,
+  type AgentProfileRevisionId,
+  type AgentProfileState,
+} from '../profiles/index.js';
+import { promptState, type Prompt, type PromptId, type PromptRevisionId, type PromptState } from '../prompts/index.js';
+import { resourceSetState, type ResourceSet, type ResourceSetId, type ResourceSetState } from '../session.js';
+import { skillState, type Skill, type SkillId, type SkillRevisionId, type SkillState } from '../skills/index.js';
 
-/** DTO types stay discoverable beside codecs rather than ordinary domain factories. */
-export type { BudgetPolicyDto } from '../budgets/index.js';
-export type {
-  ResourceAdmissionDto,
-  ResourceProposalDto,
-  ResourceReviewDto,
-  ResourceRevocationDto,
-} from '../control/index.js';
-export type { AgentProfileDto } from '../profiles/index.js';
-export type { PromptDto } from '../prompts/index.js';
-export type { ResourceSetDto } from '../session.js';
-export type { SkillDto } from '../skills/index.js';
+/** Canonical JSON-safe numeric fields owned only by the Budget transport boundary. */
+export type BudgetLimitsDto = Readonly<{
+  /** Canonical generated-output ceiling when present. */
+  outputTokens?: CanonicalDecimal;
+
+  /** Canonical wall-time ceiling when present. */
+  wallTimeMs?: CanonicalDecimal;
+}>;
+
+/** Wire representation of one exact BudgetPolicy revision. */
+export type BudgetPolicyDto = Omit<BudgetPolicyState, 'limits'> &
+  Readonly<{
+    /** Canonical decimal ceilings prevent JSON number ambiguity at remote boundaries. */
+    limits: BudgetLimitsDto;
+  }>;
+
+/** Wire representation of one exact derived BudgetAllocation fact. */
+export type BudgetAllocationDto = Omit<BudgetAllocationState, 'outputTokens'> &
+  Readonly<{
+    /** Canonical decimal output ceiling prevents JSON number ambiguity at remote boundaries. */
+    outputTokens: CanonicalDecimal;
+  }>;
+
+/** Wire representation of one exact Prompt revision. */
+export type PromptDto = PromptState;
+
+/** Wire representation of one exact Skill revision. */
+export type SkillDto = SkillState;
+
+/** Wire representation of one exact AgentProfile revision. */
+export type AgentProfileDto = AgentProfileState;
+
+/** Wire representation of one exact compiled ResourceSet receipt. */
+export type ResourceSetDto = ResourceSetState;
+
+/** Wire representation of one Resource proposal fact. */
+export type ResourceProposalDto = ResourceProposalState;
+
+/** Wire representation of one independent Resource review fact. */
+export type ResourceReviewDto = ResourceReviewState;
+
+/** Wire representation of one Resource admission fact. */
+export type ResourceAdmissionDto = ResourceAdmissionState;
+
+/** Wire representation of one Resource revocation fact. */
+export type ResourceRevocationDto = ResourceRevocationState;
 
 /**
  * Copies and deeply freezes one already JSON-safe DTO value.
@@ -274,6 +333,32 @@ export const BudgetPolicyDtoSchema = z
     }
   })
   .transform((value) => immutableDto(value) as unknown as BudgetPolicyDto);
+
+/** Strict transport schema for one derived BudgetAllocation fact. */
+export const BudgetAllocationDtoSchema = z
+  .strictObject({
+    id: UuidV4Schema.transform((value) => value as BudgetAllocationId),
+    object: z.literal('budget-allocation'),
+    createdAt: TimestampSchema,
+    policy: BudgetPolicyRefDtoSchema,
+    model: ModelRefDtoSchema,
+    parentId: UuidV4Schema.transform((value) => value as BudgetAllocationId).optional(),
+    outputTokens: PositiveSafeIntegerDtoSchema,
+    startedAt: TimestampSchema,
+    deadline: TimestampSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.createdAt !== value.startedAt) {
+      context.addIssue({ code: 'custom', path: ['createdAt'], message: 'Allocation creation and start must agree' });
+    }
+    if (value.deadline !== undefined && value.deadline <= value.startedAt) {
+      context.addIssue({ code: 'custom', path: ['deadline'], message: 'Allocation deadline must follow its start' });
+    }
+    if (value.parentId === value.id) {
+      context.addIssue({ code: 'custom', path: ['parentId'], message: 'Allocation cannot parent itself' });
+    }
+  })
+  .transform((value) => immutableDto(value) as unknown as BudgetAllocationDto);
 
 /** Current Agent Skills manifest fields retained by one portable Skill revision. */
 export const SkillManifestDtoSchema = z
@@ -581,6 +666,9 @@ export const PromptCodec = fromZod(PromptDtoSchema);
 /** Decodes BudgetPolicy DTO data without restoring policy behavior. */
 export const BudgetPolicyCodec = fromZod(BudgetPolicyDtoSchema);
 
+/** Decodes BudgetAllocation DTO data without restoring delegated parent authority. */
+export const BudgetAllocationCodec = fromZod(BudgetAllocationDtoSchema);
+
 /** Decodes Skill DTO data without restoring acquired content guarantees. */
 export const SkillCodec = fromZod(SkillDtoSchema);
 
@@ -607,70 +695,107 @@ export const ResourceRevocationCodec = fromZod(ResourceRevocationDtoSchema);
 
 /**
  * Copies one behavior value into detached Prompt transport data.
- * @param prompt - Behavior-bearing Prompt exposing its explicit DTO boundary.
+ * @param prompt - Exact behavior-bearing Prompt.
  * @returns Deeply immutable detached Prompt data.
  */
-export function encodePrompt(
-  prompt: Readonly<{
-    /** Requires behavior-owned Prompt serialization rather than accepting arbitrary DTO input. */
-    toJSON(): PromptDto;
-  }>,
-): PromptDto {
-  return PromptDtoSchema.parse(prompt.toJSON());
+export function encodePrompt(prompt: Prompt): PromptDto {
+  return PromptDtoSchema.parse(promptState(prompt));
 }
 
 /**
  * Copies one behavior value into detached BudgetPolicy transport data.
- * @param policy - Behavior-bearing BudgetPolicy exposing its explicit DTO boundary.
+ * @param policy - Exact behavior-bearing BudgetPolicy.
  * @returns Deeply immutable detached policy data.
  */
-export function encodeBudgetPolicy(
-  policy: Readonly<{
-    /** Requires behavior-owned BudgetPolicy serialization rather than accepting arbitrary DTO input. */
-    toJSON(): BudgetPolicyDto;
-  }>,
-): BudgetPolicyDto {
-  return BudgetPolicyDtoSchema.parse(policy.toJSON());
+export function encodeBudgetPolicy(policy: BudgetPolicy): BudgetPolicyDto {
+  /** Domain state retains useful JavaScript numbers; canonical text is strictly transport policy. */
+  const state = budgetPolicyState(policy);
+  return BudgetPolicyDtoSchema.parse({
+    ...state,
+    limits: {
+      ...(state.limits.outputTokens === undefined
+        ? {}
+        : { outputTokens: CanonicalDecimalSchema.parse(String(state.limits.outputTokens)) }),
+      ...(state.limits.wallTimeMs === undefined
+        ? {}
+        : { wallTimeMs: CanonicalDecimalSchema.parse(String(state.limits.wallTimeMs)) }),
+    },
+  });
+}
+
+/**
+ * Copies one admitted allocation into detached transport data.
+ * @param allocation - Exact allocation carrying runtime parent authority.
+ * @returns Deeply immutable detached allocation DTO.
+ */
+export function encodeBudgetAllocation(allocation: BudgetAllocation): BudgetAllocationDto {
+  /** Domain state retains a useful JavaScript number until the transport boundary owns its encoding. */
+  const state = budgetAllocationState(allocation);
+  return BudgetAllocationDtoSchema.parse({
+    ...state,
+    outputTokens: CanonicalDecimalSchema.parse(String(state.outputTokens)),
+  });
 }
 
 /**
  * Copies one behavior value into detached Skill transport data.
- * @param skill - Behavior-bearing Skill exposing its explicit DTO boundary.
+ * @param skill - Exact behavior-bearing Skill.
  * @returns Deeply immutable detached Skill data.
  */
-export function encodeSkill(
-  skill: Readonly<{
-    /** Requires behavior-owned Skill serialization rather than accepting arbitrary DTO input. */
-    toJSON(): SkillDto;
-  }>,
-): SkillDto {
-  return SkillDtoSchema.parse(skill.toJSON());
+export function encodeSkill(skill: Skill): SkillDto {
+  return SkillDtoSchema.parse(skillState(skill));
 }
 
 /**
  * Copies one behavior value into detached AgentProfile transport data.
- * @param profile - Behavior-bearing profile exposing its explicit DTO boundary.
+ * @param profile - Exact behavior-bearing AgentProfile.
  * @returns Deeply immutable detached profile data.
  */
-export function encodeAgentProfile(
-  profile: Readonly<{
-    /** Requires behavior-owned AgentProfile serialization rather than accepting arbitrary DTO input. */
-    toJSON(): AgentProfileDto;
-  }>,
-): AgentProfileDto {
-  return AgentProfileDtoSchema.parse(profile.toJSON());
+export function encodeAgentProfile(profile: AgentProfile): AgentProfileDto {
+  return AgentProfileDtoSchema.parse(agentProfileState(profile));
 }
 
 /**
  * Copies one compiled set into detached ResourceSet transport data.
- * @param resourceSet - Behavior-bound set exposing its explicit DTO boundary.
+ * @param resourceSet - Exact package-compiled ResourceSet.
  * @returns Deeply immutable detached ResourceSet receipt.
  */
-export function encodeResourceSet(
-  resourceSet: Readonly<{
-    /** Requires closed ResourceSet serialization rather than accepting arbitrary DTO input. */
-    toJSON(): ResourceSetDto;
-  }>,
-): ResourceSetDto {
-  return ResourceSetDtoSchema.parse(resourceSet.toJSON());
+export function encodeResourceSet(resourceSet: ResourceSet): ResourceSetDto {
+  return ResourceSetDtoSchema.parse(resourceSetState(resourceSet));
+}
+
+/**
+ * Copies one locally earned proposal into detached transport data.
+ * @param proposal - Exact proposal carrying local runtime provenance.
+ * @returns Deeply immutable proposal DTO.
+ */
+export function encodeResourceProposal(proposal: ResourceProposal): ResourceProposalDto {
+  return ResourceProposalDtoSchema.parse(resourceProposalState(proposal));
+}
+
+/**
+ * Copies one locally earned review into detached transport data.
+ * @param review - Exact review carrying proposal-bound runtime provenance.
+ * @returns Deeply immutable review DTO.
+ */
+export function encodeResourceReview(review: ResourceReview): ResourceReviewDto {
+  return ResourceReviewDtoSchema.parse(resourceReviewState(review));
+}
+
+/**
+ * Copies one verified admission chain into detached transport data.
+ * @param evidence - Exact positive compiler evidence.
+ * @returns Deeply immutable portable admission chain.
+ */
+export function encodeResourceAdmissionChain(evidence: VerifiedResourceAdmission): ResourceAdmissionChain {
+  return ResourceAdmissionChainDtoSchema.parse(resourceAdmissionChainState(evidence));
+}
+
+/**
+ * Copies one verified revocation into detached transport data.
+ * @param evidence - Exact negative compiler evidence.
+ * @returns Deeply immutable portable revocation fact.
+ */
+export function encodeResourceRevocation(evidence: VerifiedResourceRevocation): ResourceRevocationDto {
+  return ResourceRevocationDtoSchema.parse(resourceRevocationState(evidence));
 }

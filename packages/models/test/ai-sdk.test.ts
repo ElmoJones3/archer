@@ -13,7 +13,7 @@ import {
   createAiSdkModelRouter,
 } from '../src/ai-sdk/index.js';
 import { createModelStepRequest, openAIModel } from '../src/index.js';
-import { ModelStepRequestCodec } from '../src/transport/index.js';
+import { encodeModelStepRequest } from '../src/transport/index.js';
 
 /** Usage fixture a real AI SDK v3 provider can produce. */
 const USAGE = {
@@ -530,7 +530,7 @@ describe('AI SDK model router', () => {
     /** A prototype object can expose every field without being the acknowledged command. */
     const inherited = Object.create(request) as typeof request;
     /** Transport decoding produces valid portable fields but deliberately no effect authority. */
-    const decoded = ModelStepRequestCodec.parse(JSON.parse(JSON.stringify(request)));
+    const decoded = encodeModelStepRequest(request);
     /** Reattaching the admitted Model cannot promote decoded request fields into a local command. */
     const reattached = Object.freeze({ ...decoded, model: target }) as typeof request;
 

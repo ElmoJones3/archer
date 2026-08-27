@@ -13,6 +13,7 @@ import {
   reviewResource,
   revokeResource,
   verifyResourceAdmissionChain,
+  verifyResourceRevocation,
   type ResourceAdmissionId,
   type ResourceCandidate,
   type ResourceProposal,
@@ -20,6 +21,7 @@ import {
   type ResourceReview,
   type ResourceReviewId,
   type ResourceRevocationId,
+  type VerifiedResourceRevocation,
   type VerifiedResourceAdmission,
 } from '../src/control/index.js';
 import { hydrateResourceSet } from '../src/hydration/index.js';
@@ -27,6 +29,11 @@ import {
   ResourceAdmissionChainCodec,
   ResourceProposalCodec,
   ResourceReviewCodec,
+  ResourceRevocationCodec,
+  encodeResourceAdmissionChain,
+  encodeResourceProposal,
+  encodeResourceReview,
+  encodeResourceRevocation,
   encodeResourceSet,
 } from '../src/transport/index.js';
 import {
@@ -190,7 +197,7 @@ describe('Resource control behavior', () => {
       mode: 'reviewed',
       admissions: admissions.map((evidence) => evidence.admission.id),
     });
-    expect(hydrated.value.toJSON()).toEqual(compiled.value.toJSON());
+    expect(encodeResourceSet(hydrated.value)).toEqual(encodeResourceSet(compiled.value));
   });
 
   it('refuses missing, ambiguous, or revoked admission without mutating supplied facts', () => {
@@ -238,6 +245,176 @@ describe('Resource control behavior', () => {
       }),
     ).toEqual({ ok: false, error: expect.objectContaining({ code: 'resources_compile_refused' }) });
     expect(JSON.stringify([modelAdmission, promptAdmission, duplicatePromptAdmission, budgetAdmission])).toBe(snapshot);
+  });
+
+  it('refuses surplus admission evidence instead of silently discarding it', () => {
+    /** Builds the selected profile and one unrelated Resource whose valid evidence must not be ignored. */
+    const { model, prompt, budget, profile } = profileFixture();
+    /** Creates a valid but unselected Prompt so this is excess authority rather than malformed input. */
+    const unrelated = definePrompt(
+      { name: 'Unselected voice', placement: 'system', template: 'Use a different voice.' },
+      promptContext(384),
+    );
+    /** Supplies one exact admission per selected Resource plus one extra valid admission. */
+    const admissions = [admit(model), admit(prompt), admit(budget), admit(unrelated)] as const;
+    /** Snapshots caller-owned evidence so refusal must preserve every exact input object. */
+    const before = JSON.stringify(admissions);
+
+    /** Compiles once so exact refusal and preserved caller evidence can be asserted together. */
+    const compiled = compileReviewedResourceSet({
+      profile,
+      admissions,
+      context: resourceSetContext(385),
+    });
+
+    expect(compiled).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'resources_compile_refused' }),
+    });
+    expect(JSON.stringify(admissions)).toBe(before);
+  });
+
+  it('keeps decoded revocations inert until exact admission binding and application authentication succeed', async () => {
+    /** Earns one selected admission that both local and restored revocation paths can target. */
+    const { model, prompt, budget, profile } = profileFixture();
+    /** Retains complete selected evidence so compilation fails only on revocation authority. */
+    const admissions = [admit(model), admit(prompt), admit(budget)] as const;
+    /** Mints one genuine revocation before crossing the JSON transport boundary. */
+    const earned = revokeResource(
+      admissions[1],
+      ACTORS.revoker,
+      controlContext<ResourceRevocationId>(386),
+      'Retired configuration',
+    );
+    /** Parses valid detached data that must carry no compiler-negative authority. */
+    const decoded = ResourceRevocationCodec.parse(encodeResourceRevocation(earned));
+    /** Records portable inputs before refusal and asynchronous authentication checks. */
+    const before = JSON.stringify({ admissions, decoded });
+    /** Exercises common structural-forgery shapes in addition to direct decoded data. */
+    const forged = [
+      decoded,
+      { ...decoded },
+      Object.create(decoded) as typeof decoded,
+      {
+        id: decoded.id,
+        object: decoded.object,
+        createdAt: decoded.createdAt,
+        admissionId: decoded.admissionId,
+        resource: decoded.resource,
+        revokedBy: decoded.revokedBy,
+        ...(decoded.reason === undefined ? {} : { reason: decoded.reason }),
+      },
+    ] as const;
+    /** Every structural shape remains inert even when a JavaScript caller casts around nominal typing. */
+    for (const revocation of forged) {
+      expect(
+        compileReviewedResourceSet({
+          profile,
+          admissions,
+          revocations: [revocation as VerifiedResourceRevocation],
+          context: resourceSetContext(387),
+        }),
+      ).toEqual({
+        ok: false,
+        error: expect.objectContaining({
+          code: 'resources_compile_refused',
+          message: 'Reviewed compilation requires verified revocations',
+        }),
+      });
+    }
+    /** Records that the application authenticates a detached immutable snapshot, not caller aliases. */
+    const authenticate = vi.fn((revocation: typeof decoded) => {
+      expect(Object.isFrozen(revocation)).toBe(true);
+      expect(Object.isFrozen(revocation.resource)).toBe(true);
+      return true;
+    });
+    /** Re-earns negative authority only against the exact verified admission named by the DTO. */
+    const restored = await verifyResourceRevocation(admissions[1], decoded, authenticate);
+    if (!restored.ok) throw restored.error;
+
+    expect(
+      compileReviewedResourceSet({
+        profile,
+        admissions,
+        revocations: [restored.value],
+        context: resourceSetContext(388),
+      }),
+    ).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        code: 'resources_compile_refused',
+        message: 'Selected prompt Resource admission is revoked',
+        details: {
+          resourceId: prompt.id,
+          revisionId: prompt.revisionId,
+          admissionId: admissions[1].admission.id,
+        },
+      }),
+    });
+    expect(authenticate).toHaveBeenCalledOnce();
+    /** Confirms exact-admission mismatch is rejected before application authentication can run. */
+    const mismatchedAuthenticator = vi.fn(() => true);
+    await expect(verifyResourceRevocation(admissions[0], decoded, mismatchedAuthenticator)).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'resources_admission_refused' }),
+    });
+    expect(mismatchedAuthenticator).not.toHaveBeenCalled();
+    /** Retains the genuine admission identity while changing only the repeated Resource revision. */
+    const alteredResource = ResourceRevocationCodec.parse({
+      ...decoded,
+      resource: { ...decoded.resource, revisionId: uuid(389) },
+    });
+    /** Proves exact Resource mismatch is rejected independently before application authentication. */
+    const alteredResourceAuthenticator = vi.fn(() => true);
+    await expect(
+      verifyResourceRevocation(admissions[1], alteredResource, alteredResourceAuthenticator),
+    ).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        code: 'resources_admission_refused',
+        message: 'Restored revocation does not match its exact admission',
+      }),
+    });
+    expect(alteredResourceAuthenticator).not.toHaveBeenCalled();
+    await expect(verifyResourceRevocation(admissions[1], decoded, () => false)).resolves.toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'resources_admission_refused' }),
+    });
+    expect(JSON.stringify({ admissions, decoded })).toBe(before);
+  });
+
+  it('encodes lifecycle facts only through explicit transport projections', () => {
+    /** Earns the complete lifecycle so each encoder receives genuine domain provenance. */
+    const { prompt } = profileFixture();
+    /** Proposes and reviews separately so their explicit encoders are independently observable. */
+    const proposal = proposeResource(prompt, ACTORS.proposer, controlContext<ResourceProposalId>(394));
+    /** Earns an independent passing review bound to the exact proposal object. */
+    const review = reviewResource(
+      proposal,
+      { reviewedBy: ACTORS.reviewer, decision: 'approve' },
+      controlContext<ResourceReviewId>(395),
+    );
+    if (!review.ok) throw review.error;
+    /** Admits the exact Resource before encoding the complete positive-evidence chain. */
+    const admission = admitResource(
+      prompt,
+      proposal,
+      review.value,
+      ACTORS.admitter,
+      controlContext<ResourceAdmissionId>(396),
+    );
+    if (!admission.ok) throw admission.error;
+    /** Revokes through behavior so transport never accepts arbitrary field bags as an encode source. */
+    const revocation = revokeResource(admission.value, ACTORS.revoker, controlContext<ResourceRevocationId>(397));
+
+    expect(encodeResourceProposal(proposal)).toEqual(ResourceProposalCodec.parse(proposal));
+    expect(encodeResourceReview(review.value)).toEqual(ResourceReviewCodec.parse(review.value));
+    expect(encodeResourceAdmissionChain(admission.value)).toEqual(ResourceAdmissionChainCodec.parse(admission.value));
+    expect(encodeResourceRevocation(revocation)).toEqual(ResourceRevocationCodec.parse(revocation));
+    expect(() => encodeResourceProposal({ ...proposal } as ResourceProposal)).toThrow();
+    expect(() => encodeResourceReview({ ...review.value } as ResourceReview)).toThrow();
+    expect(() => encodeResourceAdmissionChain({ ...admission.value } as VerifiedResourceAdmission)).toThrow();
+    expect(() => encodeResourceRevocation({ ...revocation } as VerifiedResourceRevocation)).toThrow();
   });
 
   it('keeps decoded proposal and review DTOs outside locally earned provenance', () => {

@@ -163,31 +163,31 @@ export type CompatibleModel = ModelBase<'compatible'> &
 /** Every model configuration understood by Archer's provider-neutral router. */
 export type Model = OpenAIModel | GoogleModel | XAIModel | OllamaModel | CompatibleModel;
 
-/** JSON-safe OpenAI model state without process-local admission evidence. */
-export type OpenAIModelDto = Omit<OpenAIModel, typeof admittedModelBrand>;
+/** Intrinsic OpenAI model state without process-local admission evidence. */
+export type OpenAIModelState = Omit<OpenAIModel, typeof admittedModelBrand>;
 
-/** JSON-safe Google model state without process-local admission evidence. */
-export type GoogleModelDto = Omit<GoogleModel, typeof admittedModelBrand>;
+/** Intrinsic Google model state without process-local admission evidence. */
+export type GoogleModelState = Omit<GoogleModel, typeof admittedModelBrand>;
 
-/** JSON-safe xAI model state without process-local admission evidence. */
-export type XAIModelDto = Omit<XAIModel, typeof admittedModelBrand>;
+/** Intrinsic xAI model state without process-local admission evidence. */
+export type XAIModelState = Omit<XAIModel, typeof admittedModelBrand>;
 
-/** JSON-safe Ollama model state without process-local admission evidence. */
-export type OllamaModelDto = Omit<OllamaModel, typeof admittedModelBrand>;
+/** Intrinsic Ollama model state without process-local admission evidence. */
+export type OllamaModelState = Omit<OllamaModel, typeof admittedModelBrand>;
 
-/** JSON-safe compatible-installation state without process-local admission evidence. */
-export type CompatibleModelDto = Omit<CompatibleModel, typeof admittedModelBrand>;
+/** Intrinsic compatible-installation state without process-local admission evidence. */
+export type CompatibleModelState = Omit<CompatibleModel, typeof admittedModelBrand>;
 
-/** Every transportable model Resource revision accepted by the explicit codec. */
-export type ModelDto = OpenAIModelDto | GoogleModelDto | XAIModelDto | OllamaModelDto | CompatibleModelDto;
+/** Every intrinsic model Resource revision accepted by domain admission and hydration. */
+export type ModelState = OpenAIModelState | GoogleModelState | XAIModelState | OllamaModelState | CompatibleModelState;
 
 /** Distributive contentDigest-free union used only while factories assemble a revision. */
 type UndigestedModel =
-  | Omit<OpenAIModelDto, 'contentDigest'>
-  | Omit<GoogleModelDto, 'contentDigest'>
-  | Omit<XAIModelDto, 'contentDigest'>
-  | Omit<OllamaModelDto, 'contentDigest'>
-  | Omit<CompatibleModelDto, 'contentDigest'>;
+  | Omit<OpenAIModelState, 'contentDigest'>
+  | Omit<GoogleModelState, 'contentDigest'>
+  | Omit<XAIModelState, 'contentDigest'>
+  | Omit<OllamaModelState, 'contentDigest'>
+  | Omit<CompatibleModelState, 'contentDigest'>;
 
 /** Complete model identity carried by profiles and adapter bindings. */
 export type ModelRef = Readonly<{
@@ -303,7 +303,7 @@ const ModelBaseSchema = z.strictObject({
 });
 
 /** Runtime schema used only by model creation and explicit transport adapters. */
-export const ModelSchema: z.ZodType<ModelDto> = z
+export const ModelStateSchema: z.ZodType<ModelState> = z
   .discriminatedUnion('type', [
     ModelBaseSchema.extend({
       type: z.literal('openai'),
@@ -372,7 +372,7 @@ export const ModelSchema: z.ZodType<ModelDto> = z
       });
     }
   })
-  .transform((value) => Object.freeze(value) as ModelDto);
+  .transform((value) => Object.freeze(value) as ModelState);
 
 /** Runtime provenance records only models created or exactly hydrated by this module. */
 const ADMITTED_MODELS = new WeakSet<object>();
@@ -397,7 +397,7 @@ function isSafeHttpEndpoint(value: string): boolean {
  * @param model - Model with or without its already-derived contentDigest.
  * @returns Stable revision content digest.
  */
-export function modelDigest(model: UndigestedModel | ModelDto | Model): Sha256Digest;
+export function modelDigest(model: UndigestedModel | ModelState | Model): Sha256Digest;
 /**
  * Internal overload admits validator output whose optional fields may be explicit undefined.
  * @param model - Validator output before or after its contentDigest is attached.
@@ -628,8 +628,8 @@ function buildCompatibleModel(
  */
 function admitModel<Candidate extends UndigestedModel>(candidate: Candidate): Model {
   try {
-    /** Shape validation returns a DTO copy before this factory grants process-local behavior provenance. */
-    const parsed = ModelSchema.parse({ ...candidate, contentDigest: modelDigest(candidate) });
+    /** Shape validation returns detached state before this factory grants process-local behavior provenance. */
+    const parsed = ModelStateSchema.parse({ ...candidate, contentDigest: modelDigest(candidate) });
     /** The brand is compile-time only; the WeakSet is authoritative at runtime. */
     const admitted = parsed as Model;
     ADMITTED_MODELS.add(admitted);
@@ -778,14 +778,25 @@ export function assertAdmittedModel<ModelType extends Model>(model: ModelType): 
 }
 
 /**
- * Restores one already-validated model DTO as admitted process-local behavior.
- * @param dto - Exact transport-validated model revision.
+ * Projects intrinsic model configuration without carrying process-local admission evidence.
+ * @param model - Exact factory-created or hydrated model behavior.
+ * @returns Frozen provider-discriminated state for a separate transport mapping.
+ * @internal
+ */
+export function modelState(model: Model): ModelState {
+  assertAdmittedModel(model);
+  return ModelStateSchema.parse(model);
+}
+
+/**
+ * Restores one already-validated model state as admitted process-local behavior.
+ * @param state - Exact boundary-admitted model revision.
  * @returns Frozen admitted model recognized by later behavior.
  * @internal
  */
-export function hydrateModelState(dto: ModelDto): Model {
+export function hydrateModelState(state: ModelState): Model {
   /** A fresh parse prevents the hydration caller from retaining mutable aliases. */
-  const parsed = ModelSchema.parse(dto);
+  const parsed = ModelStateSchema.parse(state);
   /** Hydration grants provenance only after its public adapter proves exact ancestry. */
   const admitted = parsed as Model;
   ADMITTED_MODELS.add(admitted);

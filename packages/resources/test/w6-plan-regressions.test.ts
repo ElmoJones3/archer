@@ -4,16 +4,20 @@ import { describe, expect, it } from 'vitest';
 
 import { defineBudgetPolicy } from '../src/entrypoints/budgets.js';
 import { definePrompt } from '../src/entrypoints/prompts.js';
+import { budgetContext, promptContext } from './support.js';
 
 describe('Wave 6 merged-plan regressions', () => {
   it('keeps Prompt order outside Prompt behavior and preserves escaped literal delimiters', () => {
     /** Creates escaped delimiters with inferred variables so the exact merged-plan grammar is locked. */
-    const prompt = definePrompt({
-      name: 'Support instructions',
-      placement: 'system',
-      template: 'Write {{{{ticketId}}}} literally for {{companyName}}.',
-      variables: ['companyName'],
-    });
+    const prompt = definePrompt(
+      {
+        name: 'Support instructions',
+        placement: 'system',
+        template: 'Write {{{{ticketId}}}} literally for {{companyName}}.',
+        variables: ['companyName'],
+      },
+      promptContext(800),
+    );
 
     /** Renders behavior once to prove literals and substitution compose without numeric Prompt order. */
     const rendered = prompt.render({ companyName: 'Acme' });
@@ -26,19 +30,25 @@ describe('Wave 6 merged-plan regressions', () => {
 
   it('gives equivalent Prompt behavior the same content identity despite display and lifecycle fields', () => {
     /** Uses explicit lifecycle and display metadata around one stable Prompt behavior. */
-    const first = definePrompt({
-      name: 'First label',
-      placement: 'system',
-      template: 'Support {{companyName}}.',
-      variables: ['companyName'],
-    });
+    const first = definePrompt(
+      {
+        name: 'First label',
+        placement: 'system',
+        template: 'Support {{companyName}}.',
+        variables: ['companyName'],
+      },
+      promptContext(802),
+    );
     /** Changes identity, time, and name while preserving behavior to lock content-digest semantics. */
-    const second = definePrompt({
-      name: 'Second label',
-      placement: 'system',
-      template: 'Support {{companyName}}.',
-      variables: ['companyName'],
-    });
+    const second = definePrompt(
+      {
+        name: 'Second label',
+        placement: 'system',
+        template: 'Support {{companyName}}.',
+        variables: ['companyName'],
+      },
+      promptContext(804),
+    );
 
     expect(first.id).not.toBe(second.id);
     expect(first.contentDigest).toBe(second.contentDigest);
@@ -46,9 +56,9 @@ describe('Wave 6 merged-plan regressions', () => {
 
   it('retains absent BudgetPolicy dimensions instead of silently installing unrelated defaults', () => {
     /** Defines output-only policy to prove absent wall time remains genuinely absent. */
-    const outputOnly = defineBudgetPolicy({ name: 'Output only', outputTokens: 800 });
+    const outputOnly = defineBudgetPolicy({ name: 'Output only', outputTokens: 800 }, budgetContext(806));
     /** Changes only display metadata to prove Budget content identity excludes names and lifecycle. */
-    const sameBehavior = defineBudgetPolicy({ name: 'Different label', outputTokens: 800 });
+    const sameBehavior = defineBudgetPolicy({ name: 'Different label', outputTokens: 800 }, budgetContext(808));
 
     expect(outputOnly.ceilings).toEqual({ outputTokens: 800 });
     expect(outputOnly.contentDigest).toBe(sameBehavior.contentDigest);

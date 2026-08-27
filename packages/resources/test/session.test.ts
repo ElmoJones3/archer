@@ -1,6 +1,7 @@
 /** @file Proves the ordinary local Resource workflow prepares one exact finite model step. */
 
-import { memoryFileStore } from '@archer/files';
+import { Result } from '@archer/core';
+import { LogicalPathSchema, memoryFileStore, type BlobSource, type FileStore } from '@archer/files';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ResourcesError, bindCompiledResources, createLocalResources } from '../src/index.js';
@@ -26,6 +27,85 @@ function identitySequence(start: number): () => ReturnType<typeof uuid> {
 }
 
 describe('local Resource session', () => {
+  it('keeps Prompt grammar in the domain when a custom source adapter supplies bytes', async () => {
+    /** Replaces Node acquisition with application-owned bytes to prove source adapters do not define Prompt syntax. */
+    const readFile = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Result.ok({
+          path: LogicalPathSchema.parse('support.md'),
+          bytes: new TextEncoder().encode('Support {{company}}.'),
+        }),
+      )
+      .mockResolvedValueOnce(
+        Result.ok({
+          path: LogicalPathSchema.parse('broken.md'),
+          bytes: new TextEncoder().encode('Support {{ company }}.'),
+        }),
+      );
+    /** Real storage keeps the assertion on production publication semantics. */
+    const backingFiles = memoryFileStore();
+    /** Counts only attempted blob publications while delegating every operation to the real store. */
+    let blobPublications = 0;
+    /** Transparent boundary adapter observes publication without mutating Archer's frozen handle. */
+    const files: FileStore = Object.freeze({
+      blobs: Object.freeze({
+        /**
+         * Counts and delegates one real immutable blob publication.
+         * @param source - Exact byte source supplied by the Prompt import workflow.
+         * @returns The backing store's real publication result.
+         */
+        async put(source: BlobSource) {
+          blobPublications += 1;
+          return backingFiles.blobs.put(source);
+        },
+        /** Delegates exact content reads without changing their verification semantics. */
+        read: backingFiles.blobs.read,
+        /** Delegates exact presence checks without changing their verification semantics. */
+        has: backingFiles.blobs.has,
+      }),
+      trees: backingFiles.trees,
+      closed: backingFiles.closed,
+      /** Delegates lifecycle ownership to the real retained store. */
+      close: backingFiles.close,
+      /** Delegates standard asynchronous disposal to the real retained store. */
+      [Symbol.asyncDispose]: backingFiles[Symbol.asyncDispose],
+    });
+    /** Binds the custom driven adapter while retaining Archer's ordinary local composition policy. */
+    const resources = createLocalResources({
+      files,
+      source: Object.freeze({ readFile }),
+      createId: identitySequence(380),
+      /**
+       * Pins trusted time because adapter substitution, not lifecycle time, is under proof.
+       * @returns Fixed trusted test timestamp.
+       */
+      now: () => timestamp(),
+    });
+    /** Imports valid text through the custom adapter before invoking Prompt-owned rendering. */
+    const imported = await resources.prompts.importFile('company://support', {
+      placement: 'system',
+      variables: ['company'],
+    });
+    if (!imported.ok) throw imported.error;
+    /** Records valid publication before the invalid source exercises pre-effect domain admission. */
+    const publicationsAfterValidPrompt = blobPublications;
+    /** Imports expression-like syntax to prove the same domain grammar rejects adapter-supplied text. */
+    const refused = await resources.prompts.importFile('company://broken', { placement: 'system' });
+
+    expect(imported.value.render({ company: 'Acme' })).toEqual({
+      ok: true,
+      value: expect.objectContaining({ content: 'Support Acme.' }),
+    });
+    expect(refused).toEqual({
+      ok: false,
+      error: expect.objectContaining({ code: 'prompt_variable_invalid', details: { variable: ' company ' } }),
+    });
+    expect(blobPublications).toBe(publicationsAfterValidPrompt);
+    expect(readFile).toHaveBeenNthCalledWith(1, 'company://support');
+    expect(readFile).toHaveBeenNthCalledWith(2, 'company://broken');
+  });
+
   it('prepares exact Prompt, Skill, Budget, Model, and ResourceSet evidence without executing a model', async () => {
     /** Creates a real Skill directory so request preparation proves file-backed behavior. */
     const fixture = await createSkillDirectory();

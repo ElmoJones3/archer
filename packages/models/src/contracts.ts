@@ -22,7 +22,7 @@ import {
 import type { LiveOperation } from '@archer/core/stream';
 
 import { ModelsError } from './errors.js';
-import { ModelSchema, assertAdmittedModel, type Model, type ModelDto } from './targets.js';
+import { ModelStateSchema, assertAdmittedModel, modelState, type Model, type ModelState } from './targets.js';
 
 /** Prevents arbitrary UUIDs from naming a model-step request. */
 declare const modelStepRequestIdBrand: unique symbol;
@@ -109,11 +109,11 @@ export type ModelStepRequest = ArcherObject<'model-step-request', ModelStepReque
     readonly [admittedModelStepRequestBrand]: true;
   }>;
 
-/** JSON-safe model-step request state whose nested model has not earned behavior provenance. */
-export type ModelStepRequestDto = Omit<ModelStepRequest, 'model' | typeof admittedModelStepRequestBrand> &
+/** Intrinsic model-step request state whose nested model has no process-local provenance. */
+export type ModelStepRequestState = Omit<ModelStepRequest, 'model' | typeof admittedModelStepRequestBrand> &
   Readonly<{
-    /** Exact portable model fields decoded without process-local admission. */
-    model: ModelDto;
+    /** Exact provider-specific model state without process-local admission. */
+    model: ModelState;
   }>;
 
 /** Developer input accepted by {@link createModelStepRequest}. */
@@ -333,12 +333,12 @@ const ModelStepResourceSetRefSchema = z
 const ADMITTED_MODEL_STEP_REQUESTS = new WeakSet<object>();
 
 /** Runtime schema used internally and by the explicit transport entry point. */
-export const ModelStepRequestSchema: z.ZodType<ModelStepRequestDto> = z
+export const ModelStepRequestStateSchema: z.ZodType<ModelStepRequestState> = z
   .strictObject({
     id: UuidV4Schema.transform((value) => value as ModelStepRequestId),
     object: z.literal('model-step-request'),
     createdAt: TimestampSchema,
-    model: ModelSchema,
+    model: ModelStateSchema,
     instructions: z
       .array(ModelInstructionSchema)
       .max(128)
@@ -366,7 +366,7 @@ export const ModelStepRequestSchema: z.ZodType<ModelStepRequestDto> = z
       names.add(tool.name);
     }
   })
-  .transform((value) => Object.freeze(value) as ModelStepRequestDto);
+  .transform((value) => Object.freeze(value) as ModelStepRequestState);
 
 /**
  * Creates one exact model request while copying every mutable caller value.
@@ -382,7 +382,7 @@ export function createModelStepRequest(
     /** Request creation requires a Model admitted by its factory or exact hydration boundary. */
     assertAdmittedModel(input.model);
     /** Structural parsing copies every request field but deliberately cannot admit its nested model. */
-    const parsed = ModelStepRequestSchema.parse({
+    const parsed = ModelStepRequestStateSchema.parse({
       id: context?.id ?? createUuidV4(),
       object: 'model-step-request',
       createdAt: context?.createdAt ?? new Date().toISOString(),
@@ -395,7 +395,7 @@ export function createModelStepRequest(
       ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
       ...(input.deadline === undefined ? {} : { deadline: input.deadline }),
     });
-    /** The already-admitted immutable model replaces the transport-only parsed copy. */
+    /** The already-admitted immutable model replaces the detached parsed copy. */
     const admitted = Object.freeze({ ...parsed, model: input.model }) as ModelStepRequest;
     /** Runtime evidence is attached only after every command field and nested Model succeeds. */
     ADMITTED_MODEL_STEP_REQUESTS.add(admitted);
@@ -427,6 +427,17 @@ export function assertAdmittedModelStepRequest(request: ModelStepRequest): Model
   /** Nested behavior is checked again so request admission never substitutes for Model admission. */
   assertAdmittedModel(request.model);
   return request;
+}
+
+/**
+ * Projects intrinsic request state without granting executable request provenance.
+ * @param request - Exact factory-created request command.
+ * @returns Frozen request state containing detached model configuration.
+ * @internal
+ */
+export function modelStepRequestState(request: ModelStepRequest): ModelStepRequestState {
+  assertAdmittedModelStepRequest(request);
+  return ModelStepRequestStateSchema.parse({ ...request, model: modelState(request.model) });
 }
 
 /** Runtime schema for normalized terminal usage in transport adapters. */

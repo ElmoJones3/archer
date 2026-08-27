@@ -64,6 +64,10 @@ FileStore, configured Model, ModelRouter, Prompt path, and Skill path;
 [`src/main.ts`](src/main.ts) only reads environment variables and prints the
 result.
 
+`answer({ ticket, maxOutputTokens })` may narrow the output limit for one
+ticket. If it asks for more than the playbook permits, preparation fails before
+the provider is called.
+
 The application uses the short local workflow:
 
 1. import the Prompt and Skill;
@@ -84,4 +88,5 @@ pnpm --filter @archer/example-resources-customer-support-playbook test
 
 The test uses Vercel's maintained AI SDK test model. It runs the same exported
 application, checks the actual provider request, and proves that the reply went
-through Resource preparation and the AI SDK adapter.
+through Resource preparation and the AI SDK adapter. It also proves an invalid
+per-ticket budget makes zero provider calls.

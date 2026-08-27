@@ -1,14 +1,37 @@
 /** @file Provides compile-time proof that root imports expose behavior, not codecs. */
 
 import { ResourceSet, bindCompiledResources } from '../src/index.js';
-import { BudgetPolicy, defineBudgetPolicy } from '../src/entrypoints/budgets.js';
-import { Prompt, definePrompt } from '../src/entrypoints/prompts.js';
+import {
+  BudgetPolicy,
+  defineBudgetPolicy,
+  type BudgetAllocation,
+  type BudgetPolicyCreationContext,
+} from '../src/entrypoints/budgets.js';
+import { createAgentProfile, type AgentProfileCreationContext } from '../src/entrypoints/profiles.js';
+import { Prompt, definePrompt, type PromptCreationContext } from '../src/entrypoints/prompts.js';
 import type { Skill } from '../src/entrypoints/skills.js';
-import type { ResourceAdmissionCodec, ResourceProposalCodec, ResourceReviewCodec } from '../src/transport/index.js';
-import type { ResourceProposal, ResourceReview, VerifiedResourceAdmission } from '../src/control/index.js';
+import type {
+  ResourceAdmissionCodec,
+  BudgetAllocationCodec,
+  ResourceProposalCodec,
+  ResourceReviewCodec,
+  ResourceRevocationCodec,
+} from '../src/transport/index.js';
+import type {
+  ResourceProposal,
+  ResourceReview,
+  VerifiedResourceAdmission,
+  VerifiedResourceRevocation,
+} from '../src/control/index.js';
 
-/** Ordinary root creation produces the behavior-bearing class. */
-const prompt: Prompt = definePrompt({ name: 'Voice', placement: 'system', template: 'Be concise.' });
+/** Application composition supplies identity and time to the standalone Prompt constructor. */
+declare const promptCreation: PromptCreationContext;
+/** Explicit lower construction still produces the behavior-bearing class. */
+const prompt: Prompt = definePrompt({ name: 'Voice', placement: 'system', template: 'Be concise.' }, promptCreation);
+
+/** Standalone Prompt construction cannot hide identity, time, or naming policy. */
+// @ts-expect-error Ordinary zero-policy construction belongs to createLocalResources().
+definePrompt({ name: 'Voice', placement: 'system', template: 'Be concise.' });
 
 /** Constructor requires module-private authority and is not ordinary hydration. */
 // @ts-expect-error Agent callers cannot obtain the module-private construction token.
@@ -38,7 +61,9 @@ declare const skill: Skill;
 skill.read('references/example.md');
 
 /** BudgetPolicy behavior is nominal even though its portable fields remain serializable. */
-const policy = defineBudgetPolicy({ outputTokens: 1_000 });
+declare const budgetCreation: BudgetPolicyCreationContext;
+/** Explicit creation facts produce the behavior-bearing BudgetPolicy class. */
+const policy = defineBudgetPolicy({ outputTokens: 1_000 }, budgetCreation);
 /** This impossible assignment proves serialization fields are not policy behavior. */
 // @ts-expect-error Object spread loses BudgetPolicy's private declaration identity.
 const forgedPolicy: BudgetPolicy = { ...policy };
@@ -47,15 +72,26 @@ void forgedPolicy;
 
 /** Thread-owned model-call accounting is not a Wave 6 BudgetPolicy input. */
 // @ts-expect-error BudgetPolicy exposes only limits this layer mechanically enforces.
-defineBudgetPolicy({ modelSteps: 1 });
+defineBudgetPolicy({ modelSteps: 1 }, budgetCreation);
 
 /** Tool execution accounting remains owned by the later Thread/tool runtime. */
 // @ts-expect-error BudgetPolicy cannot promise a tool-call limit before a consumer exists.
-defineBudgetPolicy({ toolCalls: 1 });
+defineBudgetPolicy({ toolCalls: 1 }, budgetCreation);
 
 /** Context limits require real model-specific measurement before becoming public policy. */
 // @ts-expect-error BudgetPolicy cannot claim unmeasured context admission.
-defineBudgetPolicy({ contextTokens: 1 });
+defineBudgetPolicy({ contextTokens: 1 }, budgetCreation);
+
+/** Standalone BudgetPolicy construction cannot hide identity, time, or naming policy. */
+// @ts-expect-error Ordinary zero-policy construction belongs to createLocalResources().
+defineBudgetPolicy({ outputTokens: 1_000 });
+
+/** AgentProfile uses the same explicit standalone construction boundary. */
+declare const profileCreation: AgentProfileCreationContext;
+/** Only the missing context matters; behavior-bearing selections are intentionally elided. */
+// @ts-expect-error Ordinary zero-policy construction belongs to createLocalResources().
+createAgentProfile({} as never);
+void profileCreation;
 
 /** Transport admissions remain DTOs and cannot become reviewed compiler evidence. */
 type ParsedAdmission = ReturnType<typeof ResourceAdmissionCodec.parse>;
@@ -79,3 +115,19 @@ const localReview: ResourceReview = {} as ParsedReview;
 
 void localProposal;
 void localReview;
+
+/** Transport-decoded revocation data cannot deny a verified admission by structural assignment. */
+type ParsedRevocation = ReturnType<typeof ResourceRevocationCodec.parse>;
+/** Negative compiler authority requires the private verified-revocation brand. */
+// @ts-expect-error Parsing JSON cannot mint verified revocation provenance.
+const verifiedRevocation: VerifiedResourceRevocation = {} as ParsedRevocation;
+
+void verifiedRevocation;
+
+/** Transport-decoded allocation state cannot become delegated Budget authority structurally. */
+type ParsedBudgetAllocation = ReturnType<typeof BudgetAllocationCodec.parse>;
+/** Runtime parent authority requires allocation behavior or authenticated hydration provenance. */
+// @ts-expect-error Parsing JSON cannot mint the module-private BudgetAllocation brand.
+const admittedAllocation: BudgetAllocation = {} as ParsedBudgetAllocation;
+
+void admittedAllocation;

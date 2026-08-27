@@ -2,6 +2,7 @@
 
 import {
   Result,
+  Sha256DigestSchema,
   TimestampSchema,
   UuidV4Schema,
   type ArcherObject,
@@ -25,7 +26,6 @@ import {
   type ResourceSetCreationContext,
 } from '../session.js';
 import { type Skill, skillRef, type SkillRef } from '../skills/index.js';
-import { ResourceAdmissionChainCodec } from '../transport/index.js';
 
 /** Resource kinds implemented by the current review boundary. */
 export type ResourceKind = 'model' | 'prompt' | 'skill' | 'budget-policy';
@@ -88,7 +88,7 @@ export type ResourceRevocationId = UuidV4 & {
 };
 
 /** Immutable attribution that submits one exact Resource revision for review. */
-export type ResourceProposalDto = ArcherObject<'resource-proposal', ResourceProposalId> &
+export type ResourceProposalState = ArcherObject<'resource-proposal', ResourceProposalId> &
   Readonly<{
     /** Exact kind-discriminated Resource revision proposed. */
     resource: ResourceControlRef;
@@ -101,14 +101,14 @@ export type ResourceProposalDto = ArcherObject<'resource-proposal', ResourceProp
 declare const resourceProposalBrand: unique symbol;
 
 /** Exact proposal object created by this module's ordinary behavior path. */
-export type ResourceProposal = ResourceProposalDto &
+export type ResourceProposal = ResourceProposalState &
   Readonly<{
     /** Compile-time evidence complements the runtime proposal provenance set. */
     readonly [resourceProposalBrand]: true;
   }>;
 
 /** Immutable independent decision over one exact Resource proposal. */
-export type ResourceReviewDto = ArcherObject<'resource-review', ResourceReviewId> &
+export type ResourceReviewState = ArcherObject<'resource-review', ResourceReviewId> &
   Readonly<{
     /** Proposal identity consumed by this decision. */
     proposalId: ResourceProposalId;
@@ -133,14 +133,14 @@ export type ResourceReviewDto = ArcherObject<'resource-review', ResourceReviewId
 declare const resourceReviewBrand: unique symbol;
 
 /** Exact review object created from one locally admitted proposal. */
-export type ResourceReview = ResourceReviewDto &
+export type ResourceReview = ResourceReviewState &
   Readonly<{
     /** Compile-time evidence complements the runtime review-to-proposal binding. */
     readonly [resourceReviewBrand]: true;
   }>;
 
 /** Immutable fact making one exactly reviewed revision eligible for compilation. */
-export type ResourceAdmissionDto = ArcherObject<'resource-admission', ResourceAdmissionId> &
+export type ResourceAdmissionState = ArcherObject<'resource-admission', ResourceAdmissionId> &
   Readonly<{
     /** Exact Resource revision made eligible. */
     resource: ResourceControlRef;
@@ -153,7 +153,7 @@ export type ResourceAdmissionDto = ArcherObject<'resource-admission', ResourceAd
   }>;
 
 /** Immutable fact blocking one admission from future reviewed compilation. */
-export type ResourceRevocationDto = ArcherObject<'resource-revocation', ResourceRevocationId> &
+export type ResourceRevocationState = ArcherObject<'resource-revocation', ResourceRevocationId> &
   Readonly<{
     /** Exact admission made ineligible. */
     admissionId: ResourceAdmissionId;
@@ -166,6 +166,16 @@ export type ResourceRevocationDto = ArcherObject<'resource-revocation', Resource
 
     /** Optional bounded operator context. */
     reason?: string;
+  }>;
+
+/** Prevents detached revocation data from denying compiler-positive admission evidence. */
+declare const verifiedResourceRevocationBrand: unique symbol;
+
+/** Process-local proof that one revocation targets an exact verified admission. */
+export type VerifiedResourceRevocation = ResourceRevocationState &
+  Readonly<{
+    /** Carries compile-time proof available only from revocation admission paths. */
+    readonly [verifiedResourceRevocationBrand]: true;
   }>;
 
 /** Input for one independent Resource review. */
@@ -192,13 +202,13 @@ export type ResourceControlFactContext<Id extends UuidV4> = Readonly<{
 /** Complete portable provenance required to restore one admission as positive evidence. */
 export type ResourceAdmissionChain = Readonly<{
   /** Original proposal attributed to the application-recognized proposer. */
-  proposal: ResourceProposalDto;
+  proposal: ResourceProposalState;
 
   /** Independent passing review linked to the proposal. */
-  review: ResourceReviewDto;
+  review: ResourceReviewState;
 
   /** Admission linked to that exact review and Resource revision. */
-  admission: ResourceAdmissionDto;
+  admission: ResourceAdmissionState;
 }>;
 
 /** Prevents transport records from satisfying compiler-positive evidence structurally. */
@@ -214,6 +224,9 @@ export type VerifiedResourceAdmission = ResourceAdmissionChain &
 /** Application-owned authenticity decision for a restored portable admission chain. */
 export type VerifyResourceAdmissionProvenance = (chain: ResourceAdmissionChain) => boolean | Promise<boolean>;
 
+/** Application-owned authenticity decision for one restored portable revocation fact. */
+export type VerifyResourceRevocationProvenance = (revocation: ResourceRevocationState) => boolean | Promise<boolean>;
+
 /** Complete current fact slice accepted by reviewed ResourceSet compilation. */
 export type CompileReviewedResourceSetInput = Readonly<{
   /** Legal behavior-bearing profile whose exact selections are compiled. */
@@ -223,7 +236,7 @@ export type CompileReviewedResourceSetInput = Readonly<{
   admissions: readonly VerifiedResourceAdmission[];
 
   /** Visible current revocations; omitted when no admissions were revoked. */
-  revocations?: readonly ResourceRevocationDto[];
+  revocations?: readonly VerifiedResourceRevocation[];
 
   /** Exact identity and trusted time for the compiled ResourceSet fact. */
   context: ResourceSetCreationContext;
@@ -238,11 +251,20 @@ const ADMITTED_RESOURCE_REVIEWS = new WeakMap<object, ResourceProposal>();
 /** Private canonical chains, rather than caller-facing fields, authorize compilation and revocation. */
 const VERIFIED_RESOURCE_ADMISSIONS = new WeakMap<object, ResourceAdmissionChain>();
 
+/** Private canonical revocations, rather than copied fields, authorize negative compiler evidence. */
+const VERIFIED_RESOURCE_REVOCATIONS = new WeakMap<object, ResourceRevocationState>();
+
 /** Operator context boundary shared by reviews and revocations. */
 const ReasonSchema = z.string().trim().min(1).max(1024);
 
 /** Runtime review decision boundary prevents nominal casts from entering durable facts. */
 const ReviewDecisionSchema = z.enum(['approve', 'reject']);
+
+/** Runtime Resource-kind boundary shared by restored control references. */
+const ResourceKindSchema = z.enum(['model', 'prompt', 'skill', 'budget-policy']);
+
+/** Human-facing Resource label boundary retained in self-contained control facts. */
+const ResourceControlNameSchema = z.string().trim().min(1).max(256);
 
 /**
  * Projects one behavior-bearing revision into a kind-discriminated control reference.
@@ -311,6 +333,163 @@ function factEnvelope<ObjectName extends string, Id extends UuidV4>(
     object,
     createdAt: TimestampSchema.parse(context.createdAt),
   });
+}
+
+/**
+ * Copies and admits one restored control reference without invoking a transport codec.
+ * @param reference - Proposed self-contained Resource identity.
+ * @returns Frozen intrinsic control state with admitted scalar fields.
+ */
+function copyControlRef(reference: ResourceControlRef): ResourceControlRef {
+  return Object.freeze({
+    kind: ResourceKindSchema.parse(reference.kind),
+    id: UuidV4Schema.parse(reference.id),
+    revisionId: UuidV4Schema.parse(reference.revisionId),
+    name: ResourceControlNameSchema.parse(reference.name),
+    contentDigest: Sha256DigestSchema.parse(reference.contentDigest),
+  });
+}
+
+/**
+ * Copies one proposal into admitted intrinsic domain state.
+ * @param proposal - Locally earned or transport-admitted proposal fields.
+ * @returns Detached deeply immutable proposal state.
+ */
+function copyProposalState(proposal: ResourceProposalState): ResourceProposalState {
+  return Object.freeze({
+    ...factEnvelope('resource-proposal', {
+      id: UuidV4Schema.parse(proposal.id) as ResourceProposalId,
+      createdAt: TimestampSchema.parse(proposal.createdAt),
+    }),
+    resource: copyControlRef(proposal.resource),
+    proposedBy: PrincipalIdSchema.parse(proposal.proposedBy),
+  });
+}
+
+/**
+ * Copies one review into admitted intrinsic domain state.
+ * @param review - Locally earned or transport-admitted review fields.
+ * @returns Detached deeply immutable review state.
+ */
+function copyReviewState(review: ResourceReviewState): ResourceReviewState {
+  return Object.freeze({
+    ...factEnvelope('resource-review', {
+      id: UuidV4Schema.parse(review.id) as ResourceReviewId,
+      createdAt: TimestampSchema.parse(review.createdAt),
+    }),
+    proposalId: UuidV4Schema.parse(review.proposalId) as ResourceProposalId,
+    resource: copyControlRef(review.resource),
+    proposedBy: PrincipalIdSchema.parse(review.proposedBy),
+    reviewedBy: PrincipalIdSchema.parse(review.reviewedBy),
+    decision: ReviewDecisionSchema.parse(review.decision),
+    ...(review.reason === undefined ? {} : { reason: ReasonSchema.parse(review.reason) }),
+  });
+}
+
+/**
+ * Copies one admission into admitted intrinsic domain state.
+ * @param admission - Locally earned or transport-admitted admission fields.
+ * @returns Detached deeply immutable admission state.
+ */
+function copyAdmissionState(admission: ResourceAdmissionState): ResourceAdmissionState {
+  return Object.freeze({
+    ...factEnvelope('resource-admission', {
+      id: UuidV4Schema.parse(admission.id) as ResourceAdmissionId,
+      createdAt: TimestampSchema.parse(admission.createdAt),
+    }),
+    resource: copyControlRef(admission.resource),
+    reviewId: UuidV4Schema.parse(admission.reviewId) as ResourceReviewId,
+    admittedBy: PrincipalIdSchema.parse(admission.admittedBy),
+  });
+}
+
+/**
+ * Copies one revocation into admitted intrinsic domain state.
+ * @param revocation - Locally earned or transport-admitted revocation fields.
+ * @returns Detached deeply immutable revocation state.
+ */
+function copyRevocationState(revocation: ResourceRevocationState): ResourceRevocationState {
+  return Object.freeze({
+    ...factEnvelope('resource-revocation', {
+      id: UuidV4Schema.parse(revocation.id) as ResourceRevocationId,
+      createdAt: TimestampSchema.parse(revocation.createdAt),
+    }),
+    admissionId: UuidV4Schema.parse(revocation.admissionId) as ResourceAdmissionId,
+    resource: copyControlRef(revocation.resource),
+    revokedBy: PrincipalIdSchema.parse(revocation.revokedBy),
+    ...(revocation.reason === undefined ? {} : { reason: ReasonSchema.parse(revocation.reason) }),
+  });
+}
+
+/**
+ * Copies one complete admission chain into domain-owned intrinsic state.
+ * @param chain - Locally earned or transport-admitted proposal, review, and admission facts.
+ * @returns Deeply detached immutable facts suitable for private positive evidence.
+ */
+function copyAdmissionChain(chain: ResourceAdmissionChain): ResourceAdmissionChain {
+  /** Proposal fields are copied independently so no nested caller alias survives. */
+  const proposal = copyProposalState(chain.proposal);
+  /** Review fields are copied independently before cross-fact verification. */
+  const review = copyReviewState(chain.review);
+  /** Admission fields are copied independently before positive authority is installed. */
+  const admission = copyAdmissionState(chain.admission);
+  return Object.freeze({ proposal, review, admission });
+}
+
+/**
+ * Projects one locally earned proposal for explicit transport encoding.
+ * @param proposal - Exact proposal carrying local runtime provenance.
+ * @returns Detached immutable intrinsic state.
+ * @internal
+ */
+export function resourceProposalState(proposal: ResourceProposal): ResourceProposalState {
+  if (!ADMITTED_RESOURCE_PROPOSALS.has(proposal)) {
+    throw new ResourcesError('resources_admission_refused', 'Proposal projection requires locally earned evidence');
+  }
+  return copyProposalState(proposal);
+}
+
+/**
+ * Projects one locally earned review for explicit transport encoding.
+ * @param review - Exact review bound to a locally earned proposal.
+ * @returns Detached immutable intrinsic state.
+ * @internal
+ */
+export function resourceReviewState(review: ResourceReview): ResourceReviewState {
+  if (!ADMITTED_RESOURCE_REVIEWS.has(review)) {
+    throw new ResourcesError('resources_admission_refused', 'Review projection requires locally earned evidence');
+  }
+  return copyReviewState(review);
+}
+
+/**
+ * Projects one verified admission chain for explicit transport encoding.
+ * @param evidence - Exact positive compiler evidence.
+ * @returns Detached immutable intrinsic chain.
+ * @internal
+ */
+export function resourceAdmissionChainState(evidence: VerifiedResourceAdmission): ResourceAdmissionChain {
+  /** Private lookup prevents structural lifecycle data from becoming an encode source. */
+  const canonical = VERIFIED_RESOURCE_ADMISSIONS.get(evidence);
+  if (canonical === undefined) {
+    throw new ResourcesError('resources_admission_refused', 'Admission projection requires verified evidence');
+  }
+  return copyAdmissionChain(canonical);
+}
+
+/**
+ * Projects one verified revocation for explicit transport encoding.
+ * @param evidence - Exact negative compiler evidence.
+ * @returns Detached immutable intrinsic revocation state.
+ * @internal
+ */
+export function resourceRevocationState(evidence: VerifiedResourceRevocation): ResourceRevocationState {
+  /** Private lookup prevents structural revocation data from becoming an encode source. */
+  const canonical = VERIFIED_RESOURCE_REVOCATIONS.get(evidence);
+  if (canonical === undefined) {
+    throw new ResourcesError('resources_admission_refused', 'Revocation projection requires verified evidence');
+  }
+  return copyRevocationState(canonical);
 }
 
 /**
@@ -427,7 +606,7 @@ export function admitResource(
     /** Admission actor is validated independently from proposer and reviewer attribution. */
     const actor = PrincipalIdSchema.parse(admittedBy);
     /** Admission fact stays portable while the wrapper retains process-local positive evidence. */
-    const admission: ResourceAdmissionDto = Object.freeze({
+    const admission: ResourceAdmissionState = Object.freeze({
       ...factEnvelope('resource-admission', context),
       resource: reference,
       reviewId: review.id,
@@ -447,8 +626,8 @@ export function admitResource(
  * @returns Frozen process-local evidence recognized by reviewed compilation.
  */
 function verifiedAdmission(chain: ResourceAdmissionChain): VerifiedResourceAdmission {
-  /** Transport admission copies and deeply freezes nested facts before they become authoritative. */
-  const canonical = ResourceAdmissionChainCodec.parse(chain);
+  /** Domain normalization copies nested facts without depending on transport ownership. */
+  const canonical = copyAdmissionChain(chain);
   /** The brand is compile-time only; the private canonical map is the runtime source of provenance. */
   const evidence = canonical as VerifiedResourceAdmission;
   VERIFIED_RESOURCE_ADMISSIONS.set(evidence, canonical);
@@ -491,7 +670,7 @@ export async function verifyResourceAdmissionChain(
   /** Snapshotting before checks closes mutation during the awaited application verifier. */
   let canonical: ResourceAdmissionChain;
   try {
-    canonical = ResourceAdmissionChainCodec.parse(chain);
+    canonical = copyAdmissionChain(chain);
   } catch (cause) {
     return Result.error(
       new ResourcesError('resources_admission_refused', 'Restored Resource admission chain is invalid', { cause }),
@@ -534,7 +713,7 @@ export function revokeResource(
   revokedBy: PrincipalId,
   context: ResourceControlFactContext<ResourceRevocationId>,
   proposedReason?: string,
-): ResourceRevocationDto {
+): VerifiedResourceRevocation {
   /** Exact evidence identity retrieves the immutable chain authenticated earlier. */
   const chain = VERIFIED_RESOURCE_ADMISSIONS.get(evidence);
   if (chain === undefined) {
@@ -544,13 +723,72 @@ export function revokeResource(
   const admission = chain.admission;
   /** Validate optional context before minting a durable fact identity. */
   const reason = proposedReason === undefined ? undefined : ReasonSchema.parse(proposedReason);
-  return Object.freeze({
+  /** Canonical state repeats the exact admission reference and validated revocation attribution. */
+  const canonical: ResourceRevocationState = Object.freeze({
     ...factEnvelope('resource-revocation', context),
     admissionId: admission.id,
-    resource: admission.resource,
+    resource: copyControlRef(admission.resource),
     revokedBy: PrincipalIdSchema.parse(revokedBy),
     ...(reason === undefined ? {} : { reason }),
   });
+  /** Compile-time branding is backed by the exact private canonical snapshot at runtime. */
+  const revocationEvidence = canonical as VerifiedResourceRevocation;
+  VERIFIED_RESOURCE_REVOCATIONS.set(revocationEvidence, canonical);
+  return revocationEvidence;
+}
+
+/**
+ * Restores negative compiler evidence only after exact admission binding and application authentication.
+ * @param admissionEvidence - Exact verified admission the revocation claims to deny.
+ * @param revocation - Transport-decoded revocation data carrying no authority by itself.
+ * @param verifyProvenance - Application boundary authenticating actor and durable provenance.
+ * @returns Verified revocation or a refusal that grants no compiler-negative authority.
+ */
+export async function verifyResourceRevocation(
+  admissionEvidence: VerifiedResourceAdmission,
+  revocation: ResourceRevocationState,
+  verifyProvenance: VerifyResourceRevocationProvenance,
+): Promise<ResultValue<VerifiedResourceRevocation, ResourcesError>> {
+  try {
+    /** Exact positive evidence anchors restored negative authority to an already trusted admission. */
+    const admissionChain = VERIFIED_RESOURCE_ADMISSIONS.get(admissionEvidence);
+    if (admissionChain === undefined) {
+      return Result.error(
+        new ResourcesError(
+          'resources_admission_refused',
+          'Revocation verification requires verified admission evidence',
+        ),
+      );
+    }
+    /** Snapshotting before the awaited verifier closes mutation and prototype-based aliasing. */
+    const canonical = copyRevocationState(revocation);
+    if (
+      canonical.admissionId !== admissionChain.admission.id ||
+      !sameResource(canonical.resource, admissionChain.admission.resource) ||
+      canonical.resource.name !== admissionChain.admission.resource.name
+    ) {
+      return Result.error(
+        new ResourcesError('resources_admission_refused', 'Restored revocation does not match its exact admission'),
+      );
+    }
+    /** Authenticity stays with the application that owns durable storage and actor verification. */
+    const authentic = await verifyProvenance(canonical);
+    if (!authentic) {
+      return Result.error(
+        new ResourcesError('resources_admission_refused', 'Resource revocation provenance was not authenticated'),
+      );
+    }
+    /** Only this exact object can retrieve the private canonical revocation during compilation. */
+    const evidence = canonical as VerifiedResourceRevocation;
+    VERIFIED_RESOURCE_REVOCATIONS.set(evidence, canonical);
+    return Result.ok(evidence);
+  } catch (cause) {
+    return Result.error(
+      new ResourcesError('resources_admission_refused', 'Resource revocation provenance verification failed', {
+        cause,
+      }),
+    );
+  }
 }
 
 /**
@@ -576,38 +814,69 @@ export function compileReviewedResourceSet(
   input: CompileReviewedResourceSetInput,
 ): ResultValue<ResourceSet, ResourcesError> {
   try {
+    /** Every supplied positive fact must carry exact process-local provenance before matching begins. */
+    const admissions = input.admissions.map((evidence) => VERIFIED_RESOURCE_ADMISSIONS.get(evidence));
+    if (admissions.some((chain) => chain === undefined)) {
+      return Result.error(
+        new ResourcesError('resources_compile_refused', 'Reviewed compilation requires verified admissions'),
+      );
+    }
+    /** Exact cardinality prevents valid but unselected authority from disappearing silently. */
+    const selected = selectedResources(input.profile);
+    if (admissions.length !== selected.length) {
+      return Result.error(
+        new ResourcesError('resources_compile_refused', 'Reviewed compilation requires one admission per selection'),
+      );
+    }
     /** A revocation targets admission identity rather than rewriting historical facts. */
-    const revoked = new Set((input.revocations ?? []).map((fact) => fact.admissionId));
+    const revoked = new Set<ResourceAdmissionId>();
+    /** Admits every supplied negative fact before any selected Resource is evaluated. */
+    for (const evidence of input.revocations ?? []) {
+      /** Exact-object lookup prevents a transport record or structural copy from denying admission. */
+      const canonical = VERIFIED_RESOURCE_REVOCATIONS.get(evidence);
+      if (canonical === undefined) {
+        return Result.error(
+          new ResourcesError('resources_compile_refused', 'Reviewed compilation requires verified revocations'),
+        );
+      }
+      revoked.add(canonical.admissionId);
+    }
     /** Profile order becomes the only order retained by reviewed compilation. */
     const admissionIds: ResourceAdmissionId[] = [];
     /** Every selected revision must resolve to exactly one current lifecycle fact. */
-    for (const selected of selectedResources(input.profile)) {
+    for (const selectedResource of selected) {
       /** Exact content matching prevents logical UUID reuse from bypassing review. */
-      const matches = input.admissions.flatMap((evidence) => {
-        /** Only the private snapshot can carry the Resource identity authenticated at admission. */
-        const canonical = VERIFIED_RESOURCE_ADMISSIONS.get(evidence);
-        return canonical !== undefined && sameResource(canonical.admission.resource, selected)
+      const matches = admissions.flatMap((canonical) =>
+        canonical !== undefined && sameResource(canonical.admission.resource, selectedResource)
           ? [canonical.admission]
-          : [];
-      });
+          : [],
+      );
       if (matches.length !== 1) {
         return Result.error(
           new ResourcesError(
             'resources_compile_refused',
             matches.length === 0
-              ? `Selected ${selected.kind} Resource has no exact admission`
-              : `Selected ${selected.kind} Resource has ambiguous admissions`,
-            { details: { resourceId: selected.id, revisionId: selected.revisionId } },
+              ? `Selected ${selectedResource.kind} Resource has no exact admission`
+              : `Selected ${selectedResource.kind} Resource has ambiguous admissions`,
+            { details: { resourceId: selectedResource.id, revisionId: selectedResource.revisionId } },
           ),
         );
       }
       /** Current revocation is evaluated at compilation rather than mutating admission history. */
-      const admission = matches[0] as ResourceAdmissionDto;
+      const admission = matches[0] as ResourceAdmissionState;
       if (revoked.has(admission.id)) {
         return Result.error(
-          new ResourcesError('resources_compile_refused', `Selected ${selected.kind} Resource admission is revoked`, {
-            details: { resourceId: selected.id, revisionId: selected.revisionId, admissionId: admission.id },
-          }),
+          new ResourcesError(
+            'resources_compile_refused',
+            `Selected ${selectedResource.kind} Resource admission is revoked`,
+            {
+              details: {
+                resourceId: selectedResource.id,
+                revisionId: selectedResource.revisionId,
+                admissionId: admission.id,
+              },
+            },
+          ),
         );
       }
       admissionIds.push(admission.id);

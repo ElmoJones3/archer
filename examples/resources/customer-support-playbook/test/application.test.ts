@@ -137,6 +137,7 @@ describe('customer support playbook application', () => {
     const router = createAiSdkModelRouter({ models: [binding] });
     const files = memoryFileStore();
     try {
+      /** Builds the same exported application a developer runs, including real Prompt and Skill acquisition. */
       const playbook = await createSupportPlaybook({
         files,
         model: binding.target,
@@ -155,6 +156,89 @@ describe('customer support playbook application', () => {
         retry: 'admit-new-attempt',
       });
       expect(sdkModel.doStreamCalls).toHaveLength(1);
+    } finally {
+      await router.close();
+      await files.close();
+    }
+  });
+
+  it('narrows one ticket below the playbook ceiling and sends that exact limit to the provider', async () => {
+    /** Returns one complete short reply through the real AI SDK test-model boundary. */
+    const sdkModel = new MockLanguageModelV3({
+      provider: 'openai.responses',
+      modelId: 'gpt-5.4-mini',
+      doStream: {
+        stream: providerStream([
+          { type: 'stream-start', warnings: [] },
+          { type: 'text-start', id: 'answer' },
+          { type: 'text-delta', id: 'answer', delta: 'Your order is in transit.' },
+          { type: 'text-end', id: 'answer' },
+          { type: 'finish', usage: USAGE, finishReason: { unified: 'stop', raw: 'stop' } },
+        ]),
+      },
+    });
+    /** Keeps provider capacity above both the playbook and per-ticket ceilings. */
+    const binding = bindOpenAIAiSdkModel({ sdkModel, name: 'Narrowed support model', maxOutputTokens: 1_200 });
+    /** Routes the application to the single recording provider binding. */
+    const router = createAiSdkModelRouter({ models: [binding] });
+    /** Retains the example's real Prompt and Skill snapshots during the call. */
+    const files = memoryFileStore();
+    try {
+      /** Builds the exported support application through the same setup used by the CLI. */
+      const playbook = await createSupportPlaybook({
+        files,
+        model: binding.target,
+        router,
+        skillDirectory: resolve(import.meta.dirname, '../skills/order-support'),
+        promptFile: resolve(import.meta.dirname, '../prompts/support.md'),
+        company: 'Northstar Outfitters',
+      });
+
+      /** Narrows this one reply without changing the reusable 800-token playbook policy. */
+      const result = await playbook.answer({ ticket: 'Where is order A-42?', maxOutputTokens: 400 });
+
+      expect(result.outputTokens).toBe(400);
+      expect(sdkModel.doStreamCalls).toHaveLength(1);
+      expect(sdkModel.doStreamCalls[0]?.maxOutputTokens).toBe(400);
+    } finally {
+      await router.close();
+      await files.close();
+    }
+  });
+
+  it('refuses a ticket budget that widens policy before making any provider call', async () => {
+    /** Uses a real AI SDK test model so an accidental provider invocation remains directly observable. */
+    const sdkModel = new MockLanguageModelV3({
+      provider: 'openai.responses',
+      modelId: 'gpt-5.4-mini',
+      doStream: { stream: providerStream([]) },
+    });
+    /** Binds the test model with capacity above the playbook so the Resource policy refuses first. */
+    const binding = bindOpenAIAiSdkModel({ sdkModel, name: 'Bounded support model', maxOutputTokens: 1_200 });
+    /** Routes only to the recording test binding used by this application instance. */
+    const router = createAiSdkModelRouter({ models: [binding] });
+    /** Retains imported Prompt and Skill content for the complete real application setup. */
+    const files = memoryFileStore();
+    try {
+      const playbook = await createSupportPlaybook({
+        files,
+        model: binding.target,
+        router,
+        skillDirectory: resolve(import.meta.dirname, '../skills/order-support'),
+        promptFile: resolve(import.meta.dirname, '../prompts/support.md'),
+        company: 'Northstar Outfitters',
+      });
+      /** Asks for one token beyond this playbook's 800-token policy to exercise real request preparation. */
+      const input = Object.freeze({ ticket: 'Where is order A-42?', maxOutputTokens: 801 });
+      /** Snapshots caller input so refusal proves request preparation remains non-mutating. */
+      const before = JSON.stringify(input);
+
+      /** Captures the exact preparation refusal without weakening the application's throwing boundary. */
+      const failure = await playbook.answer(input).catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ code: 'budget_request_widens_bound' });
+      expect(JSON.stringify(input)).toBe(before);
+      expect(sdkModel.doStreamCalls).toHaveLength(0);
     } finally {
       await router.close();
       await files.close();

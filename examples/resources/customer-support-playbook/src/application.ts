@@ -31,6 +31,9 @@ export type AnswerSupportTicketInput = Readonly<{
   /** Current customer ticket sent as the user message. */
   ticket: string;
 
+  /** Optional per-ticket output ceiling that may narrow, but never widen, the playbook policy. */
+  maxOutputTokens?: number;
+
   /** Optional presentation callback for live text and missed-update notices. */
   onUpdate?: (update: SupportReplyUpdate) => void;
 }>;
@@ -123,7 +126,7 @@ export type SupportReply = Readonly<{
 export type SupportPlaybook = Readonly<{
   /**
    * Answers one ticket with a fresh budget allocation and provider request.
-   * @param input - Customer ticket and optional live text presentation callback.
+   * @param input - Customer ticket, optional narrower output ceiling, and live presentation callback.
    * @returns Complete reply and the useful policy evidence that shaped it.
    */
   answer(input: AnswerSupportTicketInput): Promise<SupportReply>;
@@ -178,6 +181,9 @@ export async function createSupportPlaybook(input: CreateSupportPlaybookInput): 
         promptInputs: { company: input.company },
         history: [],
         userMessage: ticketInput.ticket,
+        ...(ticketInput.maxOutputTokens === undefined
+          ? {}
+          : { budgetRequest: { outputTokens: ticketInput.maxOutputTokens } }),
       });
       if (!prepared.ok) throw prepared.error;
 

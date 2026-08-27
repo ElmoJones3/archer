@@ -217,6 +217,11 @@ The following rules apply at every entry point:
 
 ## Public values, interfaces, and classes
 
+The detailed decision guide is
+[Archer ownership model and composition philosophy](ownership-and-composition.md).
+It defines the Consumer and Maintainer entry depths, effect boundaries,
+transport ownership, and substitution tests used by this architecture.
+
 Durable and transferable facts are readonly objects and discriminated unions.
 This includes Thread Items, results, failures, resource revisions, grants,
 sandbox requirements, attestations, file references, Workspace snapshots,
@@ -248,10 +253,12 @@ brokers, compilers, adapters, services, and retained handles use these ports.
 Public factories validate configuration, establish ownership, and return the
 interface rather than exposing an implementation class.
 
-Domain classes may expose an explicit `toJSON()` projection when JSON readiness
-is part of their contract. That convenience does not make parsed JSON a domain
-object: codecs remain under transport entry points, and hydration still requires
-the exact parent revision and capabilities needed to restore behavior.
+Domain objects do not own wire projection. Transport entry points expose
+explicit `encode*` functions, DTOs, and codecs; hydration entry points restore
+behavior after ancestry and capability checks. This keeps a change to a wire
+version out of `Prompt`, `Skill`, `BudgetPolicy`, `AgentProfile`, and other
+behavior owners. A matching object literal, successful codec parse, or cast
+remains detached data rather than admitted behavior.
 
 Implementations use proper classes where an object owns a database, lease,
 process, queue, transport, physical view, or close sequence. Those classes are
@@ -1698,6 +1705,14 @@ and optional application limits. It retains no background work and has no
 The caller still owns and closes the FileStore, ModelRouter, and returned model
 operation.
 
+The local facade owns default construction policy. It generates UUIDv4
+identity, observes time, derives omitted petnames, and selects the Node Prompt
+source adapter. Standalone lower factories such as `definePrompt`,
+`defineBudgetPolicy`, `createAgentProfile`, and the Prompt or Skill import
+workflows require explicit creation context. This is one implementation at two
+depths: the convenient path supplies honest local defaults, while the lower
+path never hides identity or time from a custom composition root.
+
 The runnable
 [`customer-support-playbook`](../examples/resources/customer-support-playbook/README.md)
 uses this path for a real OpenAI request. Its exported application streams the
@@ -1737,6 +1752,40 @@ flowchart LR
   Session -->|produces| Allocation
   Thread -.->|later consumes allocation and owns live accounting| Allocation
 ```
+
+The implementation follows those ownership edges rather than merely naming
+folders after them:
+
+```mermaid
+flowchart LR
+  Consumer[Application]
+  Facade[createLocalResources\nlocal composition policy]
+  PromptImport[Prompt import\napplication service]
+  SkillImport[Skill import\nNode adapter + application service]
+  Source[PromptSourceImporter]
+  Files[FileStore]
+  Domain[Prompt / Skill / BudgetPolicy / AgentProfile\ndomain behavior]
+  Transport[transport\nencode* + DTO codecs]
+  Hydration[hydration\nancestry + capability checks]
+
+  Consumer -->|common jobs| Facade
+  Consumer -->|custom composition| PromptImport
+  Consumer -->|custom composition| SkillImport
+  Facade --> PromptImport
+  Facade --> SkillImport
+  Facade --> Domain
+  PromptImport --> Source
+  PromptImport --> Files
+  PromptImport -->|already acquired text + source identity| Domain
+  SkillImport --> Files
+  SkillImport -->|detached snapshot + tree identity| Domain
+  Transport -->|intrinsic state projection| Domain
+  Hydration -->|restores admitted behavior| Domain
+```
+
+No edge leaves the domain toward transport, source adapters, or FileStore.
+Effects acquire facts for domain admission; transport projects or restores
+domain state without becoming domain behavior.
 
 - A `Model` is credential-free, provider-discriminated configuration. OpenAI,
   Google Gemini, xAI, Ollama, and compatible installations retain distinct
@@ -1778,11 +1827,17 @@ nondecreasing update time. Pure modifiers accept identity and time explicitly;
 they do not read a clock, generate IDs, log, persist, or publish.
 
 Ordinary behavior lives at `@archer/models`, `@archer/resources`, and the
-Resource domain subpaths. Strict JSON-safe DTO schemas and codecs live under
-`/transport`. Decoding yields detached data only. `/hydration` restores behavior
-only after exact parent, content, selected bindings, and admission capabilities
-succeed. A schema parse never earns a revision, PromptContribution, reviewed
-admission, executable model request, or ResourceSet binding.
+Resource domain subpaths. Strict JSON-safe DTO schemas, codecs, and `encode*`
+mappings live under `/transport`; domain objects expose no `toJSON()` trap door.
+Decoding yields detached data only. `/hydration` restores behavior only after
+exact parent, content, selected bindings, and admission capabilities succeed. A
+schema parse never earns a revision, PromptContribution, reviewed admission,
+verified revocation, executable model request, BudgetAllocation authority, or
+ResourceSet binding. `BudgetAllocation` therefore has an explicit canonical
+DTO and encoder; hydration requires its exact BudgetPolicy, Model, optional
+admitted parent, and an application-owned authenticity check before the
+restored value may delegate authority. A child allocation cannot start before
+its exact parent; creation and hydration enforce the same causal order.
 
 ### Local and reviewed policy
 
@@ -1814,7 +1869,12 @@ reviewer cannot be the proposer. Admission requires the exact passing review;
 revocation names one exact admission and never rewrites history. A fact decoded
 from transport is only data. `verifyResourceAdmissionChain` requires an
 application-supplied provenance check before restored facts can authorize
-reviewed compilation.
+reviewed compilation. A decoded revocation likewise has no negative authority:
+`verifyResourceRevocation` binds it to one exact verified admission and asks
+the application to authenticate its durable provenance before it can block
+compilation. Reviewed compilation refuses forged evidence, surplus admissions,
+missing admissions, and ambiguous admissions rather than silently discarding a
+caller-supplied control fact.
 
 Wave 6 deliberately has no Resource store, registry, hosted service,
 `ResourceControl` handle, or synchronization protocol. Pure functions accept
@@ -2921,8 +2981,8 @@ per interface or first-party adapter:
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `@archer/core`          | IDs, codecs, `Program`, Cells, `LiveState`, atomic live attachment, replayable and transient streams, `LiveOperation`, authority, diagnostics, ownership, and tagged failures | `/program`, `/cells`, `/cells/conformance`, `/cells/embedded-sqlite`, `/cells/s3`, `/stream`, `/react`, `/authority`, `/authority/conformance`, `/diagnostics`                                                                      | RxJS and standard Node modules used by selected runtime modules; React and AWS SDK v3 are optional peers for their adapter subpaths |
 | `@archer/files`         | Logical paths, immutable Merkle trees, blob and tree stores, hot Workspaces and Scratchpads, live Materializers, ChangeSets, review, checks, and promotion contracts          | `/fs`, `/workspace`, `/workspace/conformance`, `/scratchpad`, `/scratchpad/conformance`, `/materializer`, `/materializer/directory`, `/materializer/conformance`; later `/s3`, `/git`, `/materializer/docker`, `/materializer/qemu` | `core`, Zod 4, Node standard modules; adapter-specific optional peers                                                               |
-| `@archer/models`        | Behavior-bearing provider targets, legal revision, admitted requests, ordered parts, deltas, one-step operations, usage, and routing                                          | `/ai-sdk`, `/transport`, `/hydration`                                                                                                                                                                                               | `core`; AI SDK bundled for the supported first-party adapter                                                                        |
-| `@archer/resources`     | The local Resource workflow, AgentProfiles, ResourceSets, request preparation, and shared admitted types                                                                      | `/prompts`, `/skills`, `/budgets`, `/profiles`, `/control`, `/transport`, `/hydration`                                                                                                                                              | `core`, `files`, `models`; `unique-names-generator` for omitted display names                                                       |
+| `@archer/models`        | Behavior-bearing provider targets, legal revision, admitted requests, ordered parts, deltas, one-step operations, usage, and routing                                          | `/ai-sdk`, `/transport`, `/hydration`                                                                                                                                                                                               | `core`, Zod 4, `unique-names-generator`; AI SDK bundled for the supported first-party adapter                                       |
+| `@archer/resources`     | The local Resource workflow, AgentProfiles, ResourceSets, request preparation, and shared admitted types                                                                      | `/prompts`, `/skills`, `/budgets`, `/profiles`, `/control`, `/transport`, `/hydration`                                                                                                                                              | `core`, `files`, `models`, Zod 4, YAML; `unique-names-generator` for omitted display names                                          |
 | `@archer/sandbox`       | Exact requirements, candidates, verification, acquisition, execution, leases, and close evidence                                                                              | `/process`, `/docker`, `/qemu-hvf`                                                                                                                                                                                                  | `core`, `files`; backend-specific optional peers                                                                                    |
 | `@archer/agent`         | `runTask`, `createArcher`, `composeArcher`, `TaskRun`, Thread, Turn, Item, tools, budgets, lifecycle, and policy composition                                                  | `/thread`, `/tools`                                                                                                                                                                                                                 | `core`, `files`, `models`, `resources`, `sandbox`                                                                                   |
 | `@archer/presets`       | Named, inspectable assemblies of defaults with explicit model and sandbox requirements                                                                                        | `/local`                                                                                                                                                                                                                            | Selected capability and observability packages                                                                                      |

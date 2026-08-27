@@ -64,40 +64,42 @@ import {
   type ReplaceAgentProfileSelectionsCommand,
 } from './profiles/index.js';
 import {
-  composePromptContributions,
   definePrompt,
-  importPromptFile,
   renderPrompt,
   revisePrompt,
   type DefinePromptInput,
-  type ImportPromptFileInput,
   type Prompt,
   type PromptContribution,
   type PromptCreationContext,
-  type PromptImportDependencies,
   type PromptRef,
   type PromptRevisionContext,
-  type PromptSourceFile,
-  type PromptSourceImporter,
   type RevisePromptInput,
 } from './prompts/index.js';
+import { composePromptContributions } from './prompts/composition.js';
 import {
-  fileStoreSkillContentReader,
-  importSkillDirectory,
+  importPromptFile,
+  type ImportPromptFileInput,
+  type PromptImportDependencies,
+  type PromptSourceFile,
+  type PromptSourceImporter,
+} from './prompts/import.js';
+import {
   loadSkillInstructions,
-  loadSkillSupport,
-  reimportSkillDirectory,
   skillRef,
   skillSummary,
-  type ImportSkillDirectoryInput,
-  type LoadedSkillSupport,
   type Skill,
   type SkillCreationContext,
-  type SkillImportDependencies,
   type SkillRef,
   type SkillRevisionContext,
   type SkillSummary,
 } from './skills/index.js';
+import { fileStoreSkillContentReader, loadSkillSupport, type LoadedSkillSupport } from './skills/content.js';
+import {
+  importSkillDirectory,
+  reimportSkillDirectory,
+  type ImportSkillDirectoryInput,
+  type SkillImportDependencies,
+} from './skills/import.js';
 
 /** Prevents unrelated UUIDs from naming a compiled ResourceSet. */
 declare const resourceSetIdBrand: unique symbol;
@@ -146,8 +148,8 @@ export type ResourceSetAdmission =
       admissions: readonly UuidV4[];
     }>;
 
-/** Portable ResourceSet state suitable for request evidence and transport. */
-export type ResourceSetDto = ArcherObject<'resource-set', ResourceSetId> &
+/** Complete intrinsic ResourceSet state suitable for projection and hydration boundaries. */
+export type ResourceSetState = ArcherObject<'resource-set', ResourceSetId> &
   Readonly<{
     /** Exact AgentProfile revision that selected every member. */
     profile: AgentProfileRef;
@@ -333,6 +335,9 @@ const RESOURCE_SET_BINDINGS = new WeakMap<ResourceSet, ResourceSetBindings>();
 
 /** Immutable compiled fact plus process-local exact behavior bindings. */
 export class ResourceSet {
+  /** Makes compiled ResourceSet evidence nominal after transport methods remain outside the domain class. */
+  declare private readonly resourceSetBrand: void;
+
   /** Immutable ResourceSet identity. */
   readonly id: ResourceSetId;
 
@@ -418,26 +423,28 @@ export class ResourceSet {
     COMPILED_RESOURCE_SETS.add(this);
     Object.freeze(this);
   }
+}
 
-  /**
-   * Emits exact JSON-safe compiled evidence without process-local bindings.
-   * @returns Frozen ResourceSet receipt.
-   */
-  toJSON(): ResourceSetDto {
-    if (!COMPILED_RESOURCE_SETS.has(this)) {
-      throw new ResourcesError('resources_invalid_resource_set', 'ResourceSet requires compiler provenance');
-    }
-    return Object.freeze({
-      id: this.id,
-      object: this.object,
-      createdAt: this.createdAt,
-      profile: this.profile,
-      resources: this.resources,
-      compilerRevision: this.compilerRevision,
-      admission: this.admission,
-      evidenceDigest: this.evidenceDigest,
-    });
+/**
+ * Projects intrinsic compiled evidence without exposing private Resource behavior bindings.
+ * @param resourceSet - Exact package-compiled selection fact.
+ * @returns Frozen ResourceSet state for a separate transport mapping.
+ * @internal
+ */
+export function resourceSetState(resourceSet: ResourceSet): ResourceSetState {
+  if (!COMPILED_RESOURCE_SETS.has(resourceSet)) {
+    throw new ResourcesError('resources_invalid_resource_set', 'ResourceSet state requires compiler provenance');
   }
+  return Object.freeze({
+    id: resourceSet.id,
+    object: resourceSet.object,
+    createdAt: resourceSet.createdAt,
+    profile: resourceSet.profile,
+    resources: resourceSet.resources,
+    compilerRevision: resourceSet.compilerRevision,
+    admission: resourceSet.admission,
+    evidenceDigest: resourceSet.evidenceDigest,
+  });
 }
 
 /**

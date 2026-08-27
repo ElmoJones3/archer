@@ -1,16 +1,14 @@
 /**
  * @file Owns immutable Prompt templates, exact rendering, and deterministic composition.
  *
- * Prompt behavior is pure after optional source acquisition. Transport parsing
- * never creates contribution provenance, and AgentProfile order is the only
- * composition order.
+ * Prompt behavior is pure. Source acquisition, request composition, transport,
+ * and hydration coordinate through explicit neighboring boundaries.
  */
 
 import * as z from 'zod';
 
 import { Result, type Result as ResultValue, type Sha256Digest, type Timestamp, type UuidV4 } from '@archer/core';
-import { FileMode, publishTree, type FileStore, type LogicalPath, type TreeRef } from '@archer/files';
-import type { ModelMessage } from '@archer/models';
+import type { LogicalPath, TreeRef } from '@archer/files';
 
 import {
   createInitialRevisionIdentity,
@@ -97,8 +95,8 @@ export type DefinePromptInput = Readonly<{
 /** Fields a Prompt revision may replace while preserving logical identity. */
 export type RevisePromptInput = Readonly<Partial<DefinePromptInput>>;
 
-/** JSON-safe Prompt state emitted at transport boundaries. */
-export type PromptDto = ResourceRevision<'prompt', PromptId, PromptRevisionId> &
+/** Complete intrinsic Prompt state used by explicit projection and hydration boundaries. */
+export type PromptState = ResourceRevision<'prompt', PromptId, PromptRevisionId> &
   Readonly<{
     /** Narrows the Wave 6 Resource family. */
     resource: 'prompt';
@@ -116,52 +114,6 @@ export type PromptDto = ResourceRevision<'prompt', PromptId, PromptRevisionId> &
     source?: PromptSourceRef;
   }>;
 
-/** One source file acquired before Prompt construction begins. */
-export type PromptSourceFile = Readonly<{
-  /** Canonical logical name used inside the immutable snapshot. */
-  path: LogicalPath;
-
-  /** Detached file bytes observed by the source adapter. */
-  bytes: Uint8Array;
-}>;
-
-/** Caller-owned source acquisition port used by Prompt import behavior. */
-export interface PromptSourceImporter {
-  /**
-   * Acquires one stable regular file without deciding Prompt semantics.
-   * @param source - Application source locator understood by the adapter.
-   * @returns Detached bytes and a canonical logical path or one source failure.
-   */
-  readFile(source: string): Promise<ResultValue<PromptSourceFile, ResourcesError>>;
-}
-
-/** Input accepted by the asynchronous Prompt file importer. */
-export type ImportPromptFileInput = Readonly<{
-  /** Application source locator supplied to the source adapter. */
-  source: string;
-
-  /** Optional display label independent from source location. */
-  name?: string;
-
-  /** Selects whether rendered text becomes an instruction or user message. */
-  placement: PromptPlacement;
-
-  /** Exact declared variables; inferred when omitted. */
-  variables?: readonly string[];
-}>;
-
-/** Borrowed capabilities used while importing one Prompt source. */
-export type PromptImportDependencies = Readonly<{
-  /** Retains the exact source bytes in Archer's immutable file plane. */
-  files: FileStore;
-
-  /** Acquires one stable source file without embedding host paths in Prompt state. */
-  source: PromptSourceImporter;
-
-  /** Supplies deterministic initial identity and time when needed. */
-  context?: PromptCreationContext;
-}>;
-
 /** Prevents arbitrary objects from claiming Prompt-owned rendering provenance. */
 declare const promptContributionBrand: unique symbol;
 
@@ -178,30 +130,6 @@ export type PromptContribution = Readonly<{
 
   /** Compile-time proof available only from Prompt behavior. */
   readonly [promptContributionBrand]: true;
-}>;
-
-/** Input accepted by deterministic Prompt composition. */
-export type ComposePromptContributionsInput = Readonly<{
-  /** Contributions already ordered by AgentProfile selection. */
-  contributions: readonly PromptContribution[];
-
-  /** Acknowledged conversation preserved before current user context. */
-  history: readonly ModelMessage[];
-
-  /** Current user request appended after user-placed Prompt contributions. */
-  userMessage: string;
-}>;
-
-/** Request parts derived from verified Prompt contributions. */
-export type ComposedPrompt = Readonly<{
-  /** System-placed contributions in exact AgentProfile order. */
-  instructions: readonly string[];
-
-  /** History, user contributions, then the current user request. */
-  messages: readonly ModelMessage[];
-
-  /** Ordered exact Prompt refs used to derive these request parts. */
-  sources: readonly PromptRef[];
 }>;
 
 /** Admits JavaScript-safe Prompt variable names. */
@@ -253,7 +181,7 @@ type AdmittedPromptDefinition = Readonly<{
 
 /** Internal state retained for each admitted immutable Prompt. */
 type PromptBehaviorState = Readonly<{
-  /** Exact source template needed for DTO encoding and revision. */
+  /** Exact source template needed for intrinsic state projection and revision. */
   template: string;
 
   /** Parsed immutable segments used for pure rendering. */
@@ -390,6 +318,22 @@ function admitPromptDefinition(input: DefinePromptInput): AdmittedPromptDefiniti
     variables,
     segments: parsed.segments,
   });
+}
+
+/**
+ * Proves proposed Prompt text, variables, and optional creation facts before external effects.
+ * @param input - Complete proposed Prompt definition.
+ * @param context - Optional explicit identity and time facts used by an importing application service.
+ * @throws {ResourcesError} When grammar or declared variables are invalid.
+ * @internal
+ */
+export function assertPromptDefinition(input: DefinePromptInput, context?: PromptCreationContext): void {
+  /** Definition admission validates the complete name, grammar, and variable contract. */
+  const admitted = admitPromptDefinition(input);
+  if (context === undefined) return;
+  /** Identity planning prevents a malformed lower-level context from failing after source publication. */
+  const facts = initialResourceContext(context);
+  createInitialRevisionIdentity('prompt', admitted.name ?? resourcePetname(facts.id), facts);
 }
 
 /**
@@ -589,34 +533,36 @@ export class Prompt implements ResourceRevision<'prompt', PromptId, PromptRevisi
       return Result.error(error);
     }
   }
+}
 
-  /**
-   * Emits JSON-safe exact state for an API, database, or asynchronous update boundary.
-   * @returns Frozen DTO carrying source behavior but no methods.
-   */
-  toJSON(): PromptDto {
-    /** Behavior state is the serialization authority for private template content. */
-    const behavior = PROMPT_BEHAVIOR.get(this);
-    if (behavior === undefined || !ADMITTED_PROMPTS.has(this)) {
-      throw new ResourcesError('resources_invalid_prompt', 'Prompt serialization requires admitted behavior');
-    }
-    return Object.freeze({
-      id: this.id,
-      object: this.object,
-      resource: this.resource,
-      createdAt: this.createdAt,
-      name: this.name,
-      revisionId: this.revisionId,
-      revision: this.revision,
-      ...(this.previousRevisionId === undefined ? {} : { previousRevisionId: this.previousRevisionId }),
-      updatedAt: this.updatedAt,
-      placement: this.placement,
-      template: behavior.template,
-      variables: this.variables,
-      ...(behavior.source === undefined ? {} : { source: behavior.source }),
-      contentDigest: this.contentDigest,
-    });
+/**
+ * Projects intrinsic Prompt state for package transport and hydration boundaries.
+ * @param prompt - Exact admitted behavior owner whose private template state is required.
+ * @returns Frozen domain state without methods or transport-format policy.
+ * @internal
+ */
+export function promptState(prompt: Prompt): PromptState {
+  /** Private behavior retains template and source facts absent from Prompt's ordinary public surface. */
+  const behavior = PROMPT_BEHAVIOR.get(prompt);
+  if (behavior === undefined || !ADMITTED_PROMPTS.has(prompt)) {
+    throw new ResourcesError('resources_invalid_prompt', 'Prompt state projection requires admitted behavior');
   }
+  return Object.freeze({
+    id: prompt.id,
+    object: prompt.object,
+    resource: prompt.resource,
+    createdAt: prompt.createdAt,
+    name: prompt.name,
+    revisionId: prompt.revisionId,
+    revision: prompt.revision,
+    ...(prompt.previousRevisionId === undefined ? {} : { previousRevisionId: prompt.previousRevisionId }),
+    updatedAt: prompt.updatedAt,
+    placement: prompt.placement,
+    template: behavior.template,
+    variables: prompt.variables,
+    ...(behavior.source === undefined ? {} : { source: behavior.source }),
+    contentDigest: prompt.contentDigest,
+  });
 }
 
 /** Package-local concrete Prompt keeps the public class non-constructible in TypeScript. */
@@ -641,10 +587,10 @@ class InstalledPrompt extends Prompt {
 /**
  * Defines one behavior-bearing Prompt from already-acquired text.
  * @param input - Placement, source text, variables, and optional display label.
- * @param context - Optional deterministic initial identity and time.
+ * @param context - Explicit deterministic initial identity and time supplied by composition policy.
  * @returns Immutable Prompt ready to render repeatedly.
  */
-export function definePrompt(input: DefinePromptInput, context?: PromptCreationContext): Prompt {
+export function definePrompt(input: DefinePromptInput, context: PromptCreationContext): Prompt {
   try {
     /** Admits template grammar and variable declarations before initial identity is created. */
     const admitted = admitPromptDefinition(input);
@@ -662,67 +608,29 @@ export function definePrompt(input: DefinePromptInput, context?: PromptCreationC
 }
 
 /**
- * Imports, snapshots, validates, and constructs one Prompt source file.
- * @param input - Source locator and Prompt behavior metadata.
- * @param dependencies - Borrowed source, immutable files, and optional deterministic facts.
- * @returns Imported Prompt or one exact source/domain refusal.
+ * Defines one imported Prompt after an application service acquires and snapshots source bytes.
+ * @param input - Placement, decoded source text, variables, and optional display label.
+ * @param source - Immutable source identity already published by the application service.
+ * @param context - Explicit initial identity and time.
+ * @returns Immutable Prompt retaining source identity without owning source I/O.
+ * @internal
  */
-export async function importPromptFile(
-  input: ImportPromptFileInput,
-  dependencies: PromptImportDependencies,
-): Promise<ResultValue<Prompt, ResourcesError>> {
+export function defineImportedPrompt(
+  input: DefinePromptInput,
+  source: PromptSourceRef,
+  context: PromptCreationContext,
+): Prompt {
   try {
-    /** Acquires stable bytes before any Prompt parsing or immutable publication begins. */
-    const acquired = await dependencies.source.readFile(input.source);
-    if (!acquired.ok) return acquired;
-    /** Strict UTF-8 rejects replacement-character corruption at the source boundary. */
-    let template: string;
-    try {
-      template = new TextDecoder('utf-8', { fatal: true }).decode(acquired.value.bytes);
-    } catch (cause) {
-      return Result.error(
-        new ResourcesError('prompt_source_invalid_utf8', 'Prompt source is not valid UTF-8', {
-          details: { path: acquired.value.path },
-          cause,
-        }),
-      );
-    }
-    /** Immutable publication copies bytes and gives the Prompt portable source identity. */
-    const published = await publishTree(dependencies.files, [
-      { path: acquired.value.path, content: acquired.value.bytes, mode: FileMode.readable },
-    ]);
-    if (!published.ok) {
-      return Result.error(
-        new ResourcesError('prompt_source_changed', 'Prompt source could not be snapshotted', {
-          details: { path: acquired.value.path },
-          cause: published.error,
-        }),
-      );
-    }
-    /** Validates decoded source text with the same grammar as in-memory Prompt definition. */
-    const admitted = admitPromptDefinition({
-      ...(input.name === undefined ? {} : { name: input.name }),
-      placement: input.placement,
-      template,
-      ...(input.variables === undefined ? {} : { variables: input.variables }),
-    });
-    /** Resolves caller-supplied or local identity after external acquisition fully succeeds. */
-    const facts = initialResourceContext(dependencies.context);
-    /** Binds the immutable source snapshot to the same initial behavior identity. */
+    /** Reuses Prompt-owned grammar so imported source cannot acquire separate semantics. */
+    const admitted = admitPromptDefinition(input);
+    /** Resolves application-owned identity only after imported text passes domain admission. */
+    const facts = initialResourceContext(context);
+    /** Binds immutable source identity without retaining a FileStore or importer capability. */
     const identity = createInitialRevisionIdentity('prompt', admitted.name ?? resourcePetname(facts.id), facts);
-    return Result.ok(
-      new InstalledPrompt(PROMPT_CONSTRUCTION, identity, admitted, {
-        tree: published.value.ref,
-        path: acquired.value.path,
-      }),
-    );
+    return new InstalledPrompt(PROMPT_CONSTRUCTION, identity, admitted, source);
   } catch (cause) {
-    /** Preserves exact source and Prompt errors while redacting unexpected importer failures. */
-    const error =
-      cause instanceof ResourcesError
-        ? cause
-        : new ResourcesError('resources_prompt_import_failed', 'Prompt import failed', { cause });
-    return Result.error(error);
+    if (cause instanceof ResourcesError) throw cause;
+    throw new ResourcesError('resources_invalid_prompt', 'Invalid imported Prompt definition', { cause });
   }
 }
 
@@ -755,97 +663,44 @@ export function revisePrompt(
 }
 
 /**
- * Composes verified contributions in caller-supplied AgentProfile order.
- * @param input - Ordered contributions, acknowledged history, and current user message.
- * @returns Complete request parts or exact contribution refusal.
+ * Reports whether one contribution was minted by Prompt rendering behavior.
+ * @param contribution - Proposed Prompt contribution.
+ * @returns True only for the exact object minted by an admitted Prompt.
+ * @internal
  */
-export function composePromptContributions(
-  input: ComposePromptContributionsInput,
-): ResultValue<ComposedPrompt, ResourcesError> {
-  /** Copying the array preserves caller state while retaining exact object identities for provenance. */
-  const contributions = [...input.contributions];
-  /** Rejects structural contribution copies before composition can treat text as Prompt evidence. */
-  const unverified = contributions.find((contribution) => !RENDERED_PROMPT_CONTRIBUTIONS.has(contribution));
-  if (unverified !== undefined) {
-    return Result.error(
-      new ResourcesError(
-        'prompt_contribution_unverified',
-        'Prompt composition requires rendered contribution evidence',
-        {
-          details: { promptRevisionId: unverified.source?.revisionId ?? 'unknown' },
-        },
-      ),
-    );
-  }
-  /** One exact Prompt revision may contribute at most once to one request. */
-  const seen = new Set<PromptRevisionId>();
-  /** Partitions verified contributions without changing their AgentProfile order. */
-  for (const contribution of contributions) {
-    if (seen.has(contribution.source.revisionId)) {
-      return Result.error(
-        new ResourcesError('prompt_duplicate_revision', 'Prompt composition received one revision more than once', {
-          details: { promptRevisionId: contribution.source.revisionId },
-        }),
-      );
-    }
-    seen.add(contribution.source.revisionId);
-  }
-  /** System instructions and user messages each preserve the same profile order. */
-  const instructions = Object.freeze(
-    contributions
-      .filter((contribution) => contribution.placement === 'system')
-      .map((contribution) => contribution.content),
-  );
-  /** History is copied deeply enough for text-only immutable message values. */
-  const history = input.history.map((message) => Object.freeze({ ...message }));
-  /** User contributions immediately precede the current user request. */
-  const current = contributions
-    .filter((contribution) => contribution.placement === 'user')
-    .map((contribution): ModelMessage => Object.freeze({ role: 'user', content: contribution.content }));
-  /** Places user contributions between acknowledged history and the current message. */
-  const messages = Object.freeze([
-    ...history,
-    ...current,
-    Object.freeze({ role: 'user' as const, content: input.userMessage }),
-  ]);
-  return Result.ok(
-    Object.freeze({
-      instructions,
-      messages,
-      sources: Object.freeze(contributions.map((contribution) => contribution.source)),
-    }),
-  );
+export function isPromptContribution(contribution: PromptContribution): boolean {
+  return RENDERED_PROMPT_CONTRIBUTIONS.has(contribution);
 }
 
 /**
  * Reconstructs Prompt behavior after transport and source adapters verify exact state.
- * @param dto - Transport-validated Prompt DTO.
+ * @param state - Admitted intrinsic Prompt state.
  * @returns Behavior-bearing Prompt with persisted identity and source.
  * @internal
  */
-export function hydratePromptState(dto: PromptDto): Prompt {
-  /** Revalidates transported behavior content rather than trusting a matching digest alone. */
+export function hydratePromptState(state: PromptState): Prompt {
+  /** Revalidates admitted behavior content rather than trusting a matching digest alone. */
   const admitted = admitPromptDefinition({
-    name: dto.name,
-    placement: dto.placement,
-    template: dto.template,
-    variables: dto.variables,
+    name: state.name,
+    placement: state.placement,
+    template: state.template,
+    variables: state.variables,
   });
   /** Restores exact lineage metadata without generating replacement identity or time. */
   const identity: RevisionIdentity<'prompt', PromptId, PromptRevisionId> = Object.freeze({
-    object: dto.object,
-    id: dto.id,
-    revisionId: dto.revisionId,
-    revision: dto.revision,
-    createdAt: dto.createdAt,
-    updatedAt: dto.updatedAt,
-    ...(dto.previousRevisionId === undefined ? {} : { previousRevisionId: dto.previousRevisionId }),
-    name: dto.name,
+    object: state.object,
+    id: state.id,
+    revisionId: state.revisionId,
+    revision: state.revision,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
+    ...(state.previousRevisionId === undefined ? {} : { previousRevisionId: state.previousRevisionId }),
+    name: state.name,
   });
-  /** Constructs behavior before comparing canonical content with transported evidence. */
-  const prompt = new InstalledPrompt(PROMPT_CONSTRUCTION, identity, admitted, dto.source);
-  if (prompt.contentDigest !== dto.contentDigest) {
-    throw new ResourcesError('resources_hydration_failed', 'Prompt DTO content does not match its content digest');
+  /** Constructs behavior before comparing canonical content with admitted state evidence. */
+  const prompt = new InstalledPrompt(PROMPT_CONSTRUCTION, identity, admitted, state.source);
+  if (prompt.contentDigest !== state.contentDigest) {
+    throw new ResourcesError('resources_hydration_failed', 'Prompt state content does not match its content digest');
   }
   return prompt;
 }
