@@ -1,0 +1,73 @@
+{
+  "name": "@archer/resources",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./prompts": {
+      "types": "./dist/entrypoints/prompts.d.ts",
+      "import": "./dist/entrypoints/prompts.js"
+    },
+    "./skills": {
+      "types": "./dist/entrypoints/skills.d.ts",
+      "import": "./dist/entrypoints/skills.js"
+    },
+    "./budgets": {
+      "types": "./dist/entrypoints/budgets.d.ts",
+      "import": "./dist/entrypoints/budgets.js"
+    },
+    "./profiles": {
+      "types": "./dist/entrypoints/profiles.d.ts",
+      "import": "./dist/entrypoints/profiles.js"
+    },
+    "./control": {
+      "types": "./dist/control/index.d.ts",
+      "import": "./dist/control/index.js"
+    },
+    "./transport": {
+      "types": "./dist/transport/index.d.ts",
+      "import": "./dist/transport/index.js"
+    },
+    "./hydration": {
+      "types": "./dist/hydration/index.d.ts",
+      "import": "./dist/hydration/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=26.7.0 <27"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.dist.json",
+    "lint": "eslint src test scripts",
+    "test": "vitest run --reporter=verbose",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@archer/core": "workspace:*",
+    "@archer/files": "workspace:*",
+    "@archer/models": "workspace:*",
+    "unique-names-generator": "^4.7.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@archer/eslint": "workspace:*",
+    "@types/node": "^26.2.0",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

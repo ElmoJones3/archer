@@ -14,6 +14,7 @@
     "example:files:fingerprint": "pnpm --filter @archer/example-files-directory-fingerprint... build && pnpm --filter @archer/example-files-directory-fingerprint demo",
     "example:files:notebook": "pnpm --filter @archer/example-files-vercel-ai-sdk-notebook-agent... build && pnpm --filter @archer/example-files-vercel-ai-sdk-notebook-agent demo",
     "example:observability": "pnpm --filter @archer/example-observability-word-count-service... build && pnpm --filter @archer/example-observability-word-count-service demo",
+    "example:resources:support": "pnpm --filter @archer/example-resources-customer-support-playbook... build && pnpm --filter @archer/example-resources-customer-support-playbook demo",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
     "lint": "turbo run lint",
